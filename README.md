@@ -128,9 +128,7 @@ the-last-light/
 
 ## 📝 Credits
 
-Game Design: Strategic board game of light vs. darkness
-Theme: Cute spooky haunted manor aesthetic
-Technology: HTML5, CSS3, Vanilla JavaScript
+Sarah Cook & Teresa Molina
 
 ---
 
