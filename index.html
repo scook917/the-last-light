@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Last Light - A Haunted Manor Board Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Main Menu Screen -->
+    <div id="main-menu" class="screen active">
+        <div class="menu-container">
+            <div class="title-container">
+                <h1 class="game-title">🕯️ The Last Light 🕯️</h1>
+                <p class="game-subtitle">Escape the Haunted Manor</p>
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" onclick="showScreen('setup-screen')">
+                    <span class="btn-icon">▶️</span> Start Game
+                </button>
+                <button class="menu-btn" onclick="showScreen('settings-screen')">
+                    <span class="btn-icon">⚙️</span> Settings
+                </button>
+                <button class="menu-btn" onclick="showScreen('instructions-screen')">
+                    <span class="btn-icon">📖</span> Instructions
+                </button>
+                <button class="menu-btn" onclick="showScreen('about-screen')">
+                    <span class="btn-icon">ℹ️</span> About
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup Screen -->
+    <div id="setup-screen" class="screen">
+        <div class="setup-container">
+            <h2>⚔️ Choose Your Battle ⚔️</h2>
+            <p class="setup-description">Select the map size to determine the number of battles</p>
+            
+            <div class="size-options">
+                <div class="size-card size-btn active" data-size="small">
+                    <div class="size-icon">👻</div>
+                    <h3>Small Manor</h3>
+                    <div class="size-details">
+                        <p>8 × 8 Board</p>
+                        <p>3 Soul Battles</p>
+                        <p>5 Soul Shards</p>
+                        <p>Max 3 Shards</p>
+                    </div>
+                </div>
+                
+                <div class="size-card size-btn" data-size="medium">
+                    <div class="size-icon">🏚️</div>
+                    <h3>Medium Manor</h3>
+                    <div class="size-details">
+                        <p>10 × 10 Board</p>
+                        <p>5 Soul Battles</p>
+                        <p>7 Soul Shards</p>
+                        <p>Max 4 Shards</p>
+                    </div>
+                </div>
+                
+                <div class="size-card size-btn" data-size="large">
+                    <div class="size-icon">🏰</div>
+                    <h3>Large Manor</h3>
+                    <div class="size-details">
+                        <p>14 × 14 Board</p>
+                        <p>10 Soul Battles</p>
+                        <p>10 Soul Shards</p>
+                        <p>Max 5 Shards</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="setup-buttons">
+                <button class="action-btn secondary-btn" onclick="showScreen('main-menu')">
+                    ← Back
+                </button>
+                <button class="action-btn primary-btn" onclick="startGame()">
+                    Start Adventure! →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions Screen -->
+    <div id="instructions-screen" class="screen">
+        <div class="instructions-container">
+            <h2>📖 How to Play</h2>
+            
+            <div class="instruction-section">
+                <h3>🎯 Objective</h3>
+                <p><strong>Soul (👻):</strong> Reach the candle 🕯️ in the center, then survive all soul battles!</p>
+                <p><strong>Ghoul (👹):</strong> Collect 3 soul shards 💎 and snuff out the candle in battle!</p>
+            </div>
+
+            <div class="instruction-section">
+                <h3>🎲 Basic Rules</h3>
+                <ul>
+                    <li>Players start in opposite corners of the map</li>
+                    <li>Roll the dice to move (1-6 spaces)</li>
+                    <li>Move horizontally OR vertically only</li>
+                    <li>Cannot zigzag until you complete 3 battles</li>
+                    <li>You can end your turn early without using all moves</li>
+                    <li>If you hit a wall, you can change direction for remaining moves</li>
+                    <li>Collect soul shards 💎 scattered on the map for power-ups</li>
+                </ul>
+            </div>
+
+            <div class="instruction-section">
+                <h3>⚔️ Soul Battles</h3>
+                <ul>
+                    <li>Battles start when players are adjacent (not diagonal)</li>
+                    <li>Both players roll dice - highest roll wins</li>
+                    <li>Ties result in a re-roll</li>
+                    <li><strong>Soul wins:</strong> Escapes! Both return to spawn</li>
+                    <li><strong>Ghoul wins with 3+ shards:</strong> Snuffs candle - Ghoul wins!</li>
+                    <li><strong>Ghoul wins without 3 shards:</strong> Soul escapes, both return to spawn</li>
+                </ul>
+            </div>
+
+            <div class="instruction-section">
+                <h3>💎 Soul Shard Power-Ups</h3>
+                
+                <div class="power-section">
+                    <h4>👻 Soul Powers (Buy before use)</h4>
+                    <ul>
+                        <li><strong>1 shard:</strong> Re-roll (small map only, usable outside battle)</li>
+                        <li><strong>2-3 shards:</strong> +1 Attack (removes 1 shard from Ghoul in battle)</li>
+                        <li><strong>3-5 shards:</strong> Cancel Snuff (prevents one candle snuff in battle)</li>
+                    </ul>
+                </div>
+
+                <div class="power-section">
+                    <h4>👹 Ghoul Powers (Buy before use)</h4>
+                    <ul>
+                        <li><strong>1 shard:</strong> Re-roll (usable outside battle)</li>
+                        <li><strong>2-3 shards:</strong> Teleport 3-5 steps closer (lose next turn)</li>
+                        <li><strong>3+ shards:</strong> Make Soul drop candle (must reach it before Soul picks it up again)</li>
+                        <li><strong>3+ shards:</strong> Can snuff candle in battle!</li>
+                    </ul>
+                </div>
+
+                <p class="note">⚠️ Shards respawn on the map after being used for power-ups</p>
+                <p class="note">📍 Small map: A new shard spawns if only 2 shards remain on board</p>
+            </div>
+
+            <div class="instruction-section">
+                <h3>🏆 Win Conditions</h3>
+                <ul>
+                    <li><strong>Soul wins:</strong> Survives all battles (3/5/10 depending on map size)</li>
+                    <li><strong>Ghoul wins:</strong> Snuffs the candle with 3+ shards in battle</li>
+                    <li><strong>Draw:</strong> If candle is dropped and neither player picks it up</li>
+                </ul>
+            </div>
+
+            <div class="instruction-section">
+                <h3>✨ Special Rules</h3>
+                <ul>
+                    <li>After 3 battles, players can zigzag (change direction during a turn)</li>
+                    <li>Soul can only carry limited shards (3/4/5 based on map size)</li>
+                    <li>Ghoul can carry unlimited shards</li>
+                    <li>Power-ups are purchased and only re-roll works outside battle</li>
+                    <li>Other power-ups activate during battles</li>
+                </ul>
+            </div>
+
+            <button class="action-btn primary-btn back-btn" onclick="showScreen('main-menu')">
+                ← Back to Menu
+            </button>
+        </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settings-screen" class="screen">
+        <div class="settings-container">
+            <h2>⚙️ Settings</h2>
+            
+            <div class="settings-section">
+                <h3>🎮 Game Settings</h3>
+                <p class="coming-soon">Coming Soon!</p>
+                <ul class="settings-list">
+                    <li>🤖 AI Difficulty Levels</li>
+                    <li>🔊 Sound Effects</li>
+                    <li>🎵 Background Music</li>
+                    <li>🎨 Theme Customization</li>
+                    <li>⏱️ Turn Timer</li>
+                </ul>
+            </div>
+
+            <button class="action-btn primary-btn back-btn" onclick="showScreen('main-menu')">
+                ← Back to Menu
+            </button>
+        </div>
+    </div>
+
+    <!-- About Screen -->
+    <div id="about-screen" class="screen">
+        <div class="about-container">
+            <h2>ℹ️ About</h2>
+            
+            <div class="about-section">
+                <h3>🕯️ The Last Light</h3>
+                <p class="story">
+                    A soul finds a candle in the haunted manor. Make your way through before an evil spirit 
+                    tries to blow it away, trapping you forever!
+                </p>
+            </div>
+
+            <div class="about-section">
+                <h3>👥 Players</h3>
+                <ul>
+                    <li><strong>👻 Soul:</strong> The Lighted Candle Bearer</li>
+                    <li><strong>👹 Ghoul:</strong> The Evil Spirit</li>
+                </ul>
+            </div>
+
+            <div class="about-section">
+                <h3>🎲 Game Components</h3>
+                <ul>
+                    <li>🕯️ Candle Token × 1</li>
+                    <li>👻 Soul Player Token × 1</li>
+                    <li>👹 Ghoul Player Token × 1</li>
+                    <li>💎 Soul Shards/Tokens × (5/7/10)</li>
+                    <li>🎲 Six-sided Dice × 1</li>
+                </ul>
+            </div>
+
+            <div class="about-section">
+                <h3>🎨 Game Design</h3>
+                <p>A spooky yet cute strategic board game where light battles darkness in a haunted manor!</p>
+            </div>
+
+            <div class="about-section">
+                <p class="version">Version 1.0.0</p>
+            </div>
+
+            <button class="action-btn primary-btn back-btn" onclick="showScreen('main-menu')">
+                ← Back to Menu
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-container">
+            <!-- Header -->
+            <div class="game-header">
+                <button class="quit-btn" onclick="quitGame()">← Quit to Menu</button>
+                <h2>🕯️ The Last Light</h2>
+                <div id="current-player" class="current-player">Player: 👻 Soul</div>
+            </div>
+
+            <!-- Game Info Bar -->
+            <div class="game-info-bar">
+                <div class="info-item">
+                    <span class="info-label">Battles:</span>
+                    <span id="battles-remaining" class="info-value">0/3</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Moves Left:</span>
+                    <span id="moves-left" class="info-value">0</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Can Zigzag:</span>
+                    <span id="can-zigzag" class="info-value">No</span>
+                </div>
+            </div>
+
+            <!-- Main Game Area -->
+            <div class="game-main">
+                <!-- Left Sidebar - Soul Stats -->
+                <div class="player-panel soul-panel">
+                    <h3>👻 Soul</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Position:</span>
+                        <span id="soul-pos" class="stat-value">(0, 0)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Shards:</span>
+                        <span id="soul-shards" class="stat-value">0/3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Has Candle:</span>
+                        <span id="soul-candle" class="stat-value">No</span>
+                    </div>
+                    <div id="soul-powers" class="powers-list">
+                        <strong>Powers:</strong><br>
+                        <em>None</em>
+                    </div>
+                    <button class="power-btn" onclick="showPowerUpModal('soul')">💎 Buy Power-Up</button>
+                </div>
+
+                <!-- Center - Board and Controls -->
+                <div class="game-center">
+                    <!-- Board -->
+                    <div id="game-board" class="game-board"></div>
+
+                    <!-- Controls -->
+                    <div class="game-controls">
+                        <div class="dice-container">
+                            <div id="dice" class="dice">?</div>
+                            <button id="roll-btn" class="action-btn primary-btn" onclick="rollDice()">
+                                🎲 Roll Dice
+                            </button>
+                        </div>
+
+                        <div class="movement-controls">
+                            <h4>Move</h4>
+                            <div class="movement-grid">
+                                <div></div>
+                                <button class="move-btn" onclick="movePlayer('up')">↑</button>
+                                <div></div>
+                                <button class="move-btn" onclick="movePlayer('left')">←</button>
+                                <button class="action-btn secondary-btn" onclick="endTurn()">End Turn</button>
+                                <button class="move-btn" onclick="movePlayer('right')">→</button>
+                                <div></div>
+                                <button class="move-btn" onclick="movePlayer('down')">↓</button>
+                                <div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Sidebar - Ghoul Stats -->
+                <div class="player-panel ghoul-panel">
+                    <h3>👹 Ghoul</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Position:</span>
+                        <span id="ghoul-pos" class="stat-value">(7, 7)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Shards:</span>
+                        <span id="ghoul-shards" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Can Snuff:</span>
+                        <span id="ghoul-can-snuff" class="stat-value">No</span>
+                    </div>
+                    <div id="ghoul-powers" class="powers-list">
+                        <strong>Powers:</strong><br>
+                        <em>None</em>
+                    </div>
+                    <button class="power-btn" onclick="showPowerUpModal('ghoul')">💎 Buy Power-Up</button>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="game-legend">
+                <h4>Legend:</h4>
+                <span>👻 Soul</span>
+                <span>👹 Ghoul</span>
+                <span>🕯️ Candle/Soul with Candle</span>
+                <span>💎 Soul Shard</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Battle Modal -->
+    <div id="battle-modal" class="modal">
+        <div class="modal-content battle-content">
+            <h2>⚔️ Soul Battle!</h2>
+            <div class="battle-rolls">
+                <div class="battle-player">
+                    <div class="battle-icon">👻</div>
+                    <div class="battle-label">Soul</div>
+                    <div id="soul-roll" class="battle-roll">?</div>
+                </div>
+                <div class="battle-vs">VS</div>
+                <div class="battle-player">
+                    <div class="battle-icon">👹</div>
+                    <div class="battle-label">Ghoul</div>
+                    <div id="ghoul-roll" class="battle-roll">?</div>
+                </div>
+            </div>
+            <div id="battle-result" class="battle-result"></div>
+            <div id="battle-powerups" class="battle-powerups" style="display: none;">
+                <p style="margin-bottom: 10px; color: var(--accent-yellow);">Use Power-Ups Before Final Roll:</p>
+                <div id="battle-powerup-buttons"></div>
+            </div>
+            <button class="action-btn primary-btn" onclick="closeBattleModal()">Continue</button>
+        </div>
+    </div>
+
+    <!-- Power-Up Modal -->
+    <div id="powerup-modal" class="modal">
+        <div class="modal-content powerup-content">
+            <h2>💎 Buy Power-Up</h2>
+            <div id="powerup-list" class="powerup-list"></div>
+            <button class="action-btn secondary-btn" onclick="closePowerUpModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div id="win-modal" class="modal">
+        <div class="modal-content win-content">
+            <h2 id="win-title">Victory!</h2>
+            <p id="win-message"></p>
+            <div class="win-buttons">
+                <button class="action-btn primary-btn" onclick="closeWinModal(); showScreen('main-menu')">
+                    Main Menu
+                </button>
+                <button class="action-btn secondary-btn" onclick="closeWinModal(); showScreen('setup-screen')">
+                    Play Again
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="game.js"></script>
+</body>
+</html>
