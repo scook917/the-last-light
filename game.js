@@ -921,7 +921,7 @@ function updatePowerUps() {
     ghoulPowers.innerHTML = '<strong>Powers:</strong><br>';
     
     // Soul powers
-    if (gameState.boardSize === 8 && gameState.soulShards >= 1) {
+    if (gameState.soulShards >= 1) {
         soulPowers.innerHTML += '• Re-roll<br>';
     }
     if ((gameState.boardSize === 8 || gameState.boardSize === 10) && gameState.soulShards >= 2) {
@@ -1010,14 +1010,14 @@ function showPowerUpModal(player) {
     list.innerHTML = '';
     
     if (player === 'soul') {
-        // Re-roll power (only on small map, only outside battle)
-        if (gameState.boardSize === 8 && gameState.soulShards >= 1) {
+        // Re-roll power (all maps, only outside battle)
+        if (gameState.soulShards >= 1) {
             list.innerHTML += `
                 <div class="powerup-item">
                     <div class="powerup-info">
                         <div class="powerup-name">🎲 Re-roll</div>
                         <div class="powerup-cost">Cost: 1 shard</div>
-                        <div class="powerup-description">Re-roll your dice (usable outside battle)</div>
+                        <div class="powerup-description">Re-roll your dice (usable after rolling)</div>
                     </div>
                     <button class="powerup-buy-btn" onclick="buyPowerUp('soul', 'reroll', 1)">Buy</button>
                 </div>
@@ -1070,6 +1070,12 @@ function closePowerUpModal() {
 }
 
 function buyPowerUp(player, powerType, cost) {
+    // Check if it's the right player's turn
+    if (player !== gameState.currentPlayer) {
+        showToast('Not your turn!');
+        return;
+    }
+    
     if (player === 'soul') {
         if (gameState.soulShards < cost) {
             showToast('Not enough shards!');
@@ -1080,12 +1086,19 @@ function buyPowerUp(player, powerType, cost) {
         
         switch(powerType) {
             case 'reroll':
-                if (gameState.movesLeft === 0) {
+                // Can only use after rolling (movesLeft > 0) but before moving
+                if (gameState.movesLeft > 0 && gameState.diceRoll === gameState.movesLeft) {
                     showToast('💎 Soul used Re-roll!');
+                    // Reset moves to allow re-roll
+                    gameState.movesLeft = 0;
                     rollDice();
                     respawnShards(cost);
+                } else if (gameState.movesLeft === 0) {
+                    showToast('Roll the dice first before using re-roll!');
+                    gameState.soulShards += cost; // Refund
+                    return;
                 } else {
-                    showToast('Can only use re-roll when you have no moves left!');
+                    showToast('Cannot re-roll after you\'ve started moving!');
                     gameState.soulShards += cost; // Refund
                     return;
                 }
@@ -1101,12 +1114,19 @@ function buyPowerUp(player, powerType, cost) {
         
         switch(powerType) {
             case 'reroll':
-                if (gameState.movesLeft === 0) {
+                // Can only use after rolling (movesLeft > 0) but before moving
+                if (gameState.movesLeft > 0 && gameState.diceRoll === gameState.movesLeft) {
                     showToast('💎 Ghoul used Re-roll!');
+                    // Reset moves to allow re-roll
+                    gameState.movesLeft = 0;
                     rollDice();
                     respawnShards(cost);
+                } else if (gameState.movesLeft === 0) {
+                    showToast('Roll the dice first before using re-roll!');
+                    gameState.ghoulShards += cost; // Refund
+                    return;
                 } else {
-                    showToast('Can only use re-roll when you have no moves left!');
+                    showToast('Cannot re-roll after you\'ve started moving!');
                     gameState.ghoulShards += cost; // Refund
                     return;
                 }
