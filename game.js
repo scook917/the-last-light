@@ -505,6 +505,9 @@ function startBattle() {
 function initiateBattle() {
     showToast('⚔️ Battle initiated!');
     
+    // Reset re-roll usage for this battle
+    gameState.battleRerollUsed = false;
+    
     const modal = document.getElementById('battle-modal');
     const powerupsDiv = document.getElementById('battle-powerups');
     const buttonsDiv = document.getElementById('battle-powerup-buttons');
@@ -541,10 +544,41 @@ function initiateBattle() {
         document.getElementById('soul-roll').textContent = soulRoll;
         document.getElementById('ghoul-roll').textContent = ghoulRoll;
         
-        // Determine winner
+        // Show continue button for human players to decide on re-roll
         setTimeout(() => {
-            resolveBattle(soulRoll, ghoulRoll);
-        }, 1000);
+            const resultDiv = document.getElementById('battle-result');
+            
+            // Check if it's a human player's turn to decide
+            const isHumanBattle = gameState.gameMode === 'vs' || 
+                                 (gameState.gameMode === 'ai' && 
+                                  ((gameState.playerRole === 'soul' && soulRoll < ghoulRoll) || 
+                                   (gameState.playerRole === 'ghoul' && ghoulRoll < soulRoll)));
+            
+            if (isHumanBattle) {
+                // Human player - show continue button
+                resultDiv.innerHTML = `
+                    <div style="text-align: center; padding: 20px;">
+                        <p style="margin-bottom: 15px;">Use a re-roll power-up above, or click Continue to resolve the battle.</p>
+                        <button id="battle-continue-btn" class="action-btn primary-btn" style="font-size: 16px; padding: 10px 30px;">
+                            ▶️ Continue to Battle Result
+                        </button>
+                    </div>
+                `;
+                
+                // Add event listener for continue button
+                setTimeout(() => {
+                    document.getElementById('battle-continue-btn').addEventListener('click', () => {
+                        resultDiv.innerHTML = '';
+                        checkAIBattleReroll(soulRoll, ghoulRoll);
+                    });
+                }, 100);
+            } else {
+                // AI's turn or no human involved - auto-resolve after delay
+                setTimeout(() => {
+                    checkAIBattleReroll(soulRoll, ghoulRoll);
+                }, 1500);
+            }
+        }, 500);
     }, 500);
 }
 
@@ -552,6 +586,12 @@ function initiateBattle() {
 function useBattlePowerUp(powerType) {
     const powerupsDiv = document.getElementById('battle-powerups');
     const resultDiv = document.getElementById('battle-result');
+    
+    // Remove continue button when re-roll is used
+    const existingButton = resultDiv.querySelector('button');
+    if (existingButton) {
+        existingButton.remove();
+    }
     
     if (powerType === 'soul-reroll') {
         if (gameState.soulShards >= 1) {
@@ -567,7 +607,7 @@ function useBattlePowerUp(powerType) {
             const ghoulRoll = parseInt(document.getElementById('ghoul-roll').textContent);
             resultDiv.innerHTML = '';
             setTimeout(() => {
-                resolveBattle(newRoll, ghoulRoll);
+                checkAIBattleReroll(newRoll, ghoulRoll);
             }, 500);
         }
     } else if (powerType === 'ghoul-reroll') {
@@ -584,13 +624,52 @@ function useBattlePowerUp(powerType) {
             const soulRoll = parseInt(document.getElementById('soul-roll').textContent);
             resultDiv.innerHTML = '';
             setTimeout(() => {
-                resolveBattle(soulRoll, newRoll);
+                checkAIBattleReroll(soulRoll, newRoll);
             }, 500);
         }
     }
 }
 
 // Resolve battle
+function checkAIBattleReroll(soulRoll, ghoulRoll) {
+    // Only allow one re-roll per battle
+    if (gameState.battleRerollUsed) {
+        resolveBattle(soulRoll, ghoulRoll);
+        return;
+    }
+    
+    // Check if AI Ghoul should re-roll after losing
+    if (gameState.gameMode === 'ai' && gameState.playerRole === 'soul') {
+        // AI is the Ghoul
+        if (ghoulRoll < soulRoll && gameState.ghoulShards > 3) {
+            // Ghoul lost and has MORE than 3 shards (needs spare after re-roll)
+            console.log(`🎲 AI Ghoul considering re-roll (has ${gameState.ghoulShards} shards)`);
+            gameState.battleRerollUsed = true;
+            setTimeout(() => {
+                useBattlePowerUp('ghoul-reroll');
+            }, 800);
+            return; // Don't resolve yet, re-roll will trigger new resolution
+        }
+    }
+    
+    // Check if AI Soul should re-roll after losing
+    if (gameState.gameMode === 'ai' && gameState.playerRole === 'ghoul') {
+        // AI is the Soul
+        if (soulRoll < ghoulRoll && gameState.soulShards > 3) {
+            // Soul lost and has MORE than 3 shards (needs spare after re-roll)
+            console.log(`🎲 AI Soul considering re-roll (has ${gameState.soulShards} shards)`);
+            gameState.battleRerollUsed = true;
+            setTimeout(() => {
+                useBattlePowerUp('soul-reroll');
+            }, 800);
+            return; // Don't resolve yet, re-roll will trigger new resolution
+        }
+    }
+    
+    // No re-roll, proceed with battle resolution
+    resolveBattle(soulRoll, ghoulRoll);
+}
+
 function resolveBattle(soulRoll, ghoulRoll) {
     const resultDiv = document.getElementById('battle-result');
     
@@ -672,31 +751,30 @@ function resolveBattle(soulRoll, ghoulRoll) {
             resultDiv.innerHTML = '<strong>👹 Ghoul wins the battle!</strong><br>AI Ghoul is deciding...';
             
             setTimeout(() => {
-                // Hard AI: always snuff if possible, else drop if possible
-                // Medium AI: 70% snuff, 50% drop if can't snuff, else nothing
-                // Easy AI: 30% snuff, 30% drop, otherwise nothing
+                // Strategic decision: Snuff vs Drop
+                // Check if soul can cancel the snuff (needs 3 shards)
+                const soulCanCancelSnuff = gameState.soulShards >= 3;
                 
-                if (canSnuff) {
-                    const shouldSnuff = gameState.aiDifficulty === 'hard' || 
-                                       (gameState.aiDifficulty === 'medium' && Math.random() < 0.7) ||
-                                       (gameState.aiDifficulty === 'easy' && Math.random() < 0.3);
-                    if (shouldSnuff) {
+                if (canSnuff && !soulCanCancelSnuff) {
+                    // Soul can't cancel - ALWAYS snuff (instant win!)
+                    ghoulChooseSnuff();
+                    return;
+                } else if (canDrop && soulCanCancelSnuff) {
+                    // Soul can cancel snuff - better to drop candle instead
+                    // This forces a chase scenario which is better than wasting shards
+                    ghoulChooseDrop();
+                    return;
+                } else if (canSnuff) {
+                    // Soul can cancel but we can't afford drop - try snuff anyway
+                    // Hard/Medium: Always try, Easy: 50% chance
+                    const shouldTrySnuff = gameState.aiDifficulty !== 'easy' || Math.random() < 0.5;
+                    if (shouldTrySnuff) {
                         ghoulChooseSnuff();
                         return;
                     }
                 }
                 
-                if (canDrop) {
-                    const shouldDrop = gameState.aiDifficulty === 'hard' || 
-                                      (gameState.aiDifficulty === 'medium' && Math.random() < 0.5) ||
-                                      (gameState.aiDifficulty === 'easy' && Math.random() < 0.3);
-                    if (shouldDrop) {
-                        ghoulChooseDrop();
-                        return;
-                    }
-                }
-                
-                // Do nothing
+                // Can't do anything useful or Easy AI chose not to
                 ghoulChooseNothing();
             }, 1500);
             return;
@@ -1219,66 +1297,86 @@ function quitGame() {
 }
 
 // Power-up modal functions
-function showPowerUpModal(player) {
-    const modal = document.getElementById('powerup-modal');
-    const list = document.getElementById('powerup-list');
+function showObjectiveModal(player) {
+    const modal = document.getElementById('objective-modal');
+    const title = document.getElementById('objective-title');
+    const list = document.getElementById('objective-content');
     
     list.innerHTML = '';
     
     if (player === 'soul') {
-        // Re-roll power (only on small map, only outside battle)
-        if (gameState.boardSize === 8 && gameState.soulShards >= 1) {
-            list.innerHTML += `
-                <div class="powerup-item">
-                    <div class="powerup-info">
-                        <div class="powerup-name">🎲 Re-roll</div>
-                        <div class="powerup-cost">Cost: 1 shard</div>
-                        <div class="powerup-description">Re-roll your dice (usable outside battle)</div>
-                    </div>
-                    <button class="powerup-buy-btn" onclick="buyPowerUp('soul', 'reroll', 1)">Buy</button>
-                </div>
-            `;
-        }
+        title.textContent = '👻 Soul Objective';
+        list.innerHTML = `
+            <div style="padding: 20px; text-align: left; line-height: 1.8;">
+                <h3 style="margin-top: 0; color: #64B5F6;">Primary Goal:</h3>
+                <p>🕯️ <strong>Retrieve the candle</strong> from the center of the manor and survive ${gameState.maxBattles} battles with the Ghoul.</p>
+                
+                <h3 style="margin-top: 20px; color: #64B5F6;">How to Win:</h3>
+                <ul style="margin: 10px 0;">
+                    <li>Get the candle from the center (can't collect shards without it)</li>
+                    <li>Collect shards (💎) to use battle powers</li>
+                    <li>Survive all ${gameState.maxBattles} battles OR survive until turn limit</li>
+                    <li>If you drop the candle in battle, race to pick it back up!</li>
+                </ul>
+                
+                <h3 style="margin-top: 20px; color: #64B5F6;">Battle Powers:</h3>
+                <ul style="margin: 10px 0;">
+                    <li><strong>Re-roll (1 shard):</strong> Re-roll your battle dice during a battle</li>
+                    <li><strong>Attack (${gameState.boardSize === 8 ? 2 : 3} shards):</strong> Remove 1 shard from Ghoul if you win</li>
+                    <li><strong>Cancel Snuff (3 shards):</strong> Prevent Ghoul from snuffing your candle</li>
+                </ul>
+                
+                <h3 style="margin-top: 20px; color: #64B5F6;">Tips:</h3>
+                <ul style="margin: 10px 0;">
+                    <li>Keep at least 3 shards to cancel a Ghoul snuff attempt!</li>
+                    <li>Avoid the Ghoul when possible - battles are risky</li>
+                    <li>You can only trigger battles from cardinal directions (up/down/left/right)</li>
+                </ul>
+            </div>
+        `;
     } else {
-        // Ghoul powers
-        // Re-roll (outside battle only)
-        if (gameState.ghoulShards >= 1) {
-            list.innerHTML += `
-                <div class="powerup-item">
-                    <div class="powerup-info">
-                        <div class="powerup-name">🎲 Re-roll</div>
-                        <div class="powerup-cost">Cost: 1 shard</div>
-                        <div class="powerup-description">Re-roll your dice (usable outside battle)</div>
-                    </div>
-                    <button class="powerup-buy-btn" onclick="buyPowerUp('ghoul', 'reroll', 1)">Buy</button>
-                </div>
-            `;
-        }
-        
-        // Teleport (outside battle only)
-        if (gameState.ghoulShards >= 2) {
-            const cost = gameState.boardSize === 8 ? 2 : 3;
-            const steps = gameState.boardSize === 8 ? 3 : 5;
-            if (gameState.ghoulShards >= cost) {
-                list.innerHTML += `
-                    <div class="powerup-item">
-                        <div class="powerup-info">
-                            <div class="powerup-name">⚡ Teleport</div>
-                            <div class="powerup-cost">Cost: ${cost} shards</div>
-                            <div class="powerup-description">Move ${steps} steps closer to Soul (lose next turn)</div>
-                        </div>
-                        <button class="powerup-buy-btn" onclick="buyPowerUp('ghoul', 'teleport', ${cost})">Buy</button>
-                    </div>
-                `;
-            }
-        }
-    }
-    
-    if (list.innerHTML === '') {
-        list.innerHTML = '<p style="text-align: center; padding: 20px;">Not enough shards to buy any power-ups!</p>';
+        title.textContent = '👹 Ghoul Objective';
+        list.innerHTML = `
+            <div style="padding: 20px; text-align: left; line-height: 1.8;">
+                <h3 style="margin-top: 0; color: #EF5350;">Primary Goal:</h3>
+                <p>💀 <strong>Prevent the Soul from escaping</strong> by snuffing their candle or making them drop it.</p>
+                
+                <h3 style="margin-top: 20px; color: #EF5350;">How to Win:</h3>
+                <ul style="margin: 10px 0;">
+                    <li>Collect 3 shards minimum (needed to snuff the candle in battle)</li>
+                    <li>Catch the Soul and win battles</li>
+                    <li>Snuff their candle (3 shards) OR make them drop it (${gameState.boardSize === 8 ? 3 : (gameState.boardSize === 10 ? 4 : 5)} shards)</li>
+                    <li>If candle is dropped, grab it first to win instantly!</li>
+                </ul>
+                
+                <h3 style="margin-top: 20px; color: #EF5350;">Battle Powers:</h3>
+                <ul style="margin: 10px 0;">
+                    <li><strong>Re-roll (1 shard):</strong> Re-roll your battle dice during a battle</li>
+                    <li><strong>Snuff Candle (3 shards):</strong> Instant win if you win the battle!</li>
+                    <li><strong>Drop Candle (${gameState.boardSize === 8 ? 3 : (gameState.boardSize === 10 ? 4 : 5)} shards):</strong> Force Soul to drop candle - race to get it!</li>
+                </ul>
+                
+                <h3 style="margin-top: 20px; color: #EF5350;">Tips:</h3>
+                <ul style="margin: 10px 0;">
+                    <li>Get 3 shards before chasing - you need them to snuff!</li>
+                    <li>Only drop if Soul has 3+ shards (they can cancel snuff)</li>
+                    <li>You can only trigger battles from cardinal directions (up/down/left/right)</li>
+                    <li>Collect extra shards while chasing for more options</li>
+                </ul>
+            </div>
+        `;
     }
     
     modal.classList.add('active');
+}
+
+// Keep old function name for backwards compatibility if needed
+function showPowerUpModal(player) {
+    showObjectiveModal(player);
+}
+
+function closeObjectiveModal() {
+    document.getElementById('objective-modal').classList.remove('active');
 }
 
 function closePowerUpModal() {
@@ -1543,8 +1641,35 @@ function makeAIMove() {
     }
     
     if (direction) {
+        const posBeforeMove = { row: aiPos.row, col: aiPos.col };
         gameState.lastAIPosition = { row: aiPos.row, col: aiPos.col };
+        
         movePlayer(direction);
+        
+        // Check if move was successful by seeing if position changed
+        const aiPosAfter = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
+        const moveSucceeded = (aiPosAfter.row !== posBeforeMove.row || aiPosAfter.col !== posBeforeMove.col);
+        
+        if (!moveSucceeded) {
+            // Move was blocked! Try a different direction
+            console.log(`⚠ Move ${direction} was blocked, trying alternative...`);
+            gameState.aiStuckCount++;
+            
+            // Get all valid directions and try a different one
+            const allDirs = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
+            const validDirs = allDirs.filter(dir => dir !== direction && canMoveInDirection(posBeforeMove, dir));
+            
+            if (validDirs.length > 0) {
+                // Try a random alternative direction
+                const altDirection = validDirs[Math.floor(Math.random() * validDirs.length)];
+                console.log(`  Trying alternative direction: ${altDirection}`);
+                movePlayer(altDirection);
+            } else {
+                console.log(`  No alternative directions available`);
+                gameState.movesLeft = 0; // Give up this turn
+            }
+        }
+        
         // Continue after a delay
         setTimeout(() => makeAIMove(), 600);
     } else {
@@ -1557,12 +1682,293 @@ function makeAIMove() {
     }
 }
 
+// Monte Carlo Tree Search Node
+class MCTSNode {
+    constructor(state, parent = null, move = null) {
+        this.state = state; // Game state snapshot
+        this.parent = parent;
+        this.move = move; // The move that led to this node
+        this.children = [];
+        this.visits = 0;
+        this.wins = 0;
+        this.untriedMoves = this.getValidMoves();
+    }
+    
+    getValidMoves() {
+        const moves = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
+        const validMoves = moves.filter(move => this.isValidMove(move));
+        
+        // Debug: log filtered moves if opponent is blocking
+        if (validMoves.length < moves.length && this.state.opponentPos) {
+            const invalidMoves = moves.filter(move => !this.isValidMove(move));
+            // Only log once at root level to avoid spam
+            if (!this.parent && invalidMoves.length > 0) {
+                console.log(`   Filtered out ${invalidMoves.length} invalid moves (would hit opponent/wall)`);
+            }
+        }
+        
+        return validMoves;
+    }
+    
+    isValidMove(direction) {
+        const pos = this.state.aiPos;
+        let newRow = pos.row;
+        let newCol = pos.col;
+        
+        switch(direction) {
+            case 'up': newRow--; break;
+            case 'down': newRow++; break;
+            case 'left': newCol--; break;
+            case 'right': newCol++; break;
+            case 'up-left': newRow--; newCol--; break;
+            case 'up-right': newRow--; newCol++; break;
+            case 'down-left': newRow++; newCol--; break;
+            case 'down-right': newRow++; newCol++; break;
+        }
+        
+        // Check board boundaries
+        if (newRow < 0 || newRow >= this.state.boardSize || 
+            newCol < 0 || newCol >= this.state.boardSize) {
+            return false;
+        }
+        
+        // Check if moving onto opponent's position (NOT ALLOWED!)
+        if (this.state.opponentPos && 
+            newRow === this.state.opponentPos.row && 
+            newCol === this.state.opponentPos.col) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    UCB1(explorationConstant = 1.41) {
+        if (this.visits === 0) return Infinity;
+        return (this.wins / this.visits) + 
+               explorationConstant * Math.sqrt(Math.log(this.parent.visits) / this.visits);
+    }
+    
+    selectChild() {
+        return this.children.reduce((best, child) => 
+            child.UCB1() > best.UCB1() ? child : best
+        );
+    }
+    
+    expand() {
+        if (this.untriedMoves.length === 0) return null;
+        const move = this.untriedMoves.pop();
+        const newState = this.simulateMove(move);
+        const child = new MCTSNode(newState, this, move);
+        this.children.push(child);
+        return child;
+    }
+    
+    simulateMove(direction) {
+        const newState = { ...this.state };
+        const pos = { ...newState.aiPos };
+        
+        switch(direction) {
+            case 'up': pos.row--; break;
+            case 'down': pos.row++; break;
+            case 'left': pos.col--; break;
+            case 'right': pos.col++; break;
+            case 'up-left': pos.row--; pos.col--; break;
+            case 'up-right': pos.row--; pos.col++; break;
+            case 'down-left': pos.row++; pos.col--; break;
+            case 'down-right': pos.row++; pos.col++; break;
+        }
+        
+        newState.aiPos = pos;
+        return newState;
+    }
+    
+    simulate() {
+        // Role-aware simulation: evaluate position quality based on AI role
+        const dist = Math.abs(this.state.aiPos.row - this.state.targetPos.row) + 
+                     Math.abs(this.state.aiPos.col - this.state.targetPos.col);
+        
+        let score = 1 / (1 + dist); // Base score: closer to target is better
+        
+        // Role-specific bonuses
+        if (this.state.aiRole === 'ghoul') {
+            // Ghoul AI: strategic shard collection and soul hunting
+            const distToSoul = Math.abs(this.state.aiPos.row - this.state.opponentPos.row) + 
+                              Math.abs(this.state.aiPos.col - this.state.opponentPos.col);
+            
+            // Check if adjacent on cardinal direction (can trigger battle)
+            const rowDiff = Math.abs(this.state.aiPos.row - this.state.opponentPos.row);
+            const colDiff = Math.abs(this.state.aiPos.col - this.state.opponentPos.col);
+            const isCardinalAdjacent = (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+            const isDiagonalAdjacent = (rowDiff === 1 && colDiff === 1);
+            
+            // Priority 1: Need 3 shards minimum to snuff candle
+            if (this.state.ghoulShards < 3) {
+                // Boost score for going after shards when we need them
+                if (this.state.targetIsShard) {
+                    score *= 1.5; // Prioritize shard collection
+                    
+                    // Check if soul is also near this shard (competition)
+                    const soulDistToTarget = Math.abs(this.state.opponentPos.row - this.state.targetPos.row) + 
+                                            Math.abs(this.state.opponentPos.col - this.state.targetPos.col);
+                    if (soulDistToTarget <= 2 && soulDistToTarget < dist) {
+                        // Soul is closer to shard - might lose it
+                        score *= 0.7;
+                    }
+                }
+                
+                // Penalty for chasing soul when we don't have enough shards yet
+                if (!this.state.targetIsShard && distToSoul < 3) {
+                    score -= 0.3;
+                }
+            } else {
+                // Have 3+ shards - now hunting mode
+                // BIG bonus for being adjacent on cardinal direction (can trigger battle!)
+                if (isCardinalAdjacent) {
+                    score += 0.8; // Huge bonus - battle can start!
+                } else if (isDiagonalAdjacent) {
+                    // Diagonal adjacent is NOT good enough for battle
+                    score += 0.1; // Small bonus but not as good
+                } else if (distToSoul === 2) {
+                    score += 0.3; // Moderate bonus for being close
+                }
+                
+                // Bonus for cutting off soul's escape routes
+                if (distToSoul <= 3) {
+                    score += 0.2;
+                }
+            }
+        } else {
+            // Soul AI: survival and smart shard collection
+            const distToGhoul = Math.abs(this.state.aiPos.row - this.state.opponentPos.row) + 
+                               Math.abs(this.state.aiPos.col - this.state.opponentPos.col);
+            
+            // Check if adjacent on cardinal direction (battle can be triggered!)
+            const rowDiff = Math.abs(this.state.aiPos.row - this.state.opponentPos.row);
+            const colDiff = Math.abs(this.state.aiPos.col - this.state.opponentPos.col);
+            const isCardinalAdjacent = (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+            const isDiagonalAdjacent = (rowDiff === 1 && colDiff === 1);
+            
+            // Check if soul already has 3+ shards
+            const hasEnoughShards = this.state.soulShards >= 3;
+            
+            if (this.state.targetIsShard && !hasEnoughShards) {
+                // Evaluating a shard target
+                const ghoulDistToTarget = Math.abs(this.state.opponentPos.row - this.state.targetPos.row) + 
+                                         Math.abs(this.state.opponentPos.col - this.state.targetPos.col);
+                
+                // Don't go for shard if ghoul is much closer (will get there first)
+                if (ghoulDistToTarget < dist - 1) {
+                    score *= 0.4; // Heavy penalty - ghoul will get it first
+                }
+                
+                // Don't go for shard if ghoul is nearby (dangerous)
+                if (distToGhoul <= 2) {
+                    score *= 0.3; // Very risky to collect shard near ghoul
+                }
+                
+                // Bonus for being closer to shard than ghoul
+                if (dist < ghoulDistToTarget) {
+                    score *= 1.3;
+                }
+            }
+            
+            // If already has 3+ shards, deprioritize collecting more
+            if (hasEnoughShards && this.state.targetIsShard) {
+                score *= 0.5; // Lower priority for additional shards
+            }
+            
+            // Survival bonuses - cardinal adjacency is MUCH worse than diagonal
+            if (isCardinalAdjacent) {
+                // CARDINAL adjacent - battle can trigger! Very dangerous!
+                score -= 0.7; // Huge penalty
+                if (this.state.ghoulShards >= 3) {
+                    score -= 0.4; // Even worse if ghoul can snuff
+                }
+            } else if (isDiagonalAdjacent) {
+                // Diagonal adjacent - safer since battle can't trigger
+                score -= 0.2; // Small penalty but not terrible
+            } else if (distToGhoul >= 5) {
+                score += 0.4; // Safe distance
+            } else if (distToGhoul >= 3) {
+                score += 0.2; // Moderate distance
+            } else if (distToGhoul === 2) {
+                score -= 0.3; // Getting close
+            }
+            
+            // Extra penalty if ghoul has 3+ shards and is in cardinal attack range
+            if (this.state.ghoulShards >= 3 && distToGhoul <= 2 && !isDiagonalAdjacent) {
+                score -= 0.2; // Very dangerous
+            }
+        }
+        
+        return Math.max(0, Math.min(1, score)); // Clamp between 0 and 1
+    }
+    
+    backpropagate(result) {
+        this.visits++;
+        this.wins += result;
+        if (this.parent) {
+            this.parent.backpropagate(result);
+        }
+    }
+}
+
+function runMCTS(aiPos, targetPos, aiRole, targetIsShard = false, iterations = 100) {
+    const opponentPos = aiRole === 'soul' ? gameState.ghoulPosition : gameState.soulPosition;
+    
+    const initialState = {
+        aiPos: { ...aiPos },
+        targetPos: { ...targetPos },
+        opponentPos: { ...opponentPos },
+        boardSize: gameState.boardSize,
+        aiRole: aiRole,
+        ghoulShards: gameState.ghoulShards,
+        soulShards: gameState.soulShards,
+        targetIsShard: targetIsShard
+    };
+    
+    const root = new MCTSNode(initialState);
+    
+    for (let i = 0; i < iterations; i++) {
+        let node = root;
+        
+        // Selection
+        while (node.untriedMoves.length === 0 && node.children.length > 0) {
+            node = node.selectChild();
+        }
+        
+        // Expansion
+        if (node.untriedMoves.length > 0) {
+            node = node.expand();
+        }
+        
+        // Simulation
+        const result = node.simulate();
+        
+        // Backpropagation
+        node.backpropagate(result);
+    }
+    
+    // Return best move
+    if (root.children.length === 0) return null;
+    const bestChild = root.children.reduce((best, child) => 
+        child.visits > best.visits ? child : best
+    );
+    
+    // Debug output
+    console.log(`  MCTS Stats: ${root.children.length} moves evaluated`);
+    console.log(`  Best move: ${bestChild.move} (${bestChild.visits} visits, ${(bestChild.wins/bestChild.visits*100).toFixed(1)}% win rate)`);
+    
+    return bestChild.move;
+}
+
 function getAIDirection() {
     const aiRole = gameState.playerRole === 'soul' ? 'ghoul' : 'soul';
     const aiPos = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
     
     // AI can always change direction - choose best direction to target
     let targetPos;
+    let targetIsShard = false;
     
     if (aiRole === 'soul') {
         // Soul AI: Check if should prioritize collecting shards (for harder difficulties)
@@ -1588,13 +1994,16 @@ function getAIDirection() {
         if (!gameState.soulHasCandle && gameState.candlePosition) {
             // Candle exists (dropped or initial) - highest priority!
             targetPos = gameState.candlePosition;
+            targetIsShard = false;
         } else if (!gameState.soulHasCandle) {
             // Don't have candle yet - go to center where it spawns
             const center = Math.floor(gameState.boardSize / 2);
             targetPos = { row: center, col: center };
+            targetIsShard = false;
         } else if (nearestShard && gameState.soulShards < gameState.maxSoulShards) {
             // Has candle - collect shards if available and not maxed out
             targetPos = nearestShard;
+            targetIsShard = true;
         } else {
             // Has candle and max shards (or no shards available) - just evade ghoul
             // Pick a random corner far from ghoul
@@ -1619,6 +2028,7 @@ function getAIDirection() {
             }
             
             targetPos = furthestCorner;
+            targetIsShard = false;
         }
     } else {
         // Ghoul AI: Prioritize getting 3 shards first, then chase Soul
@@ -1640,26 +2050,84 @@ function getAIDirection() {
         
         // Ghoul priorities:
         // 1. Dropped candle from battle (ONLY if it was dropped, NOT the initial candle!)
-        // 2. Collect shards until has 3 (to be able to snuff) - ALL difficulties do this
+        // 2. Collect 3 shards first (need them to snuff candle in battle)
         // 3. Chase soul once has 3+ shards
+        // 4. Opportunistically grab nearby shards along the way (even if has 3+)
         const atSamePosition = aiPos.row === gameState.soulPosition.row && 
                                aiPos.col === gameState.soulPosition.col;
+        
+        const distToSoul = Math.abs(aiPos.row - gameState.soulPosition.row) + 
+                          Math.abs(aiPos.col - gameState.soulPosition.col);
         
         // Only target candle if it's DROPPED (candleWasPickedUp = true), not initial candle
         if (gameState.candlePosition && gameState.candleWasPickedUp) {
             // Dropped candle exists (from battle) - always go for it to WIN!
             targetPos = gameState.candlePosition;
+            targetIsShard = false;
         } else if (needsShards && nearestShard) {
-            // Need shards to snuff - ALL difficulties prioritize collecting them
+            // Need 3 shards minimum - prioritize collecting them
             targetPos = nearestShard;
+            targetIsShard = true;
+        } else if (nearestShard && nearestShardDist <= 2 && distToSoul > nearestShardDist) {
+            // Has 3+ shards but there's a shard very close by (≤2 spaces) that's closer than soul
+            // Grab it opportunistically on the way
+            targetPos = nearestShard;
+            targetIsShard = true;
         } else if (atSamePosition) {
             // At same position as soul (e.g., after respawn) - move toward center to spread out
             const center = Math.floor(gameState.boardSize / 2);
             targetPos = { row: center, col: center };
+            targetIsShard = false;
         } else {
             // Has 3+ shards - now chase soul
             targetPos = gameState.soulPosition;
+            targetIsShard = false;
+            
+            // BUT: if soul is at the initial candle position, don't path through it
+            // Path around it instead
+            if (gameState.candlePosition && !gameState.candleWasPickedUp &&
+                targetPos.row === gameState.candlePosition.row && 
+                targetPos.col === gameState.candlePosition.col) {
+                // Soul is at initial candle - path to adjacent position instead
+                const adjacentPositions = [
+                    { row: targetPos.row - 1, col: targetPos.col },     // up
+                    { row: targetPos.row + 1, col: targetPos.col },     // down
+                    { row: targetPos.row, col: targetPos.col - 1 },     // left
+                    { row: targetPos.row, col: targetPos.col + 1 },     // right
+                ];
+                
+                // Pick closest adjacent position
+                let closestAdj = adjacentPositions[0];
+                let minDist = Infinity;
+                for (const adj of adjacentPositions) {
+                    if (adj.row >= 0 && adj.row < gameState.boardSize && 
+                        adj.col >= 0 && adj.col < gameState.boardSize) {
+                        const dist = Math.abs(aiPos.row - adj.row) + Math.abs(aiPos.col - adj.col);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestAdj = adj;
+                        }
+                    }
+                }
+                targetPos = closestAdj;
+            }
         }
+    }
+    
+    // Use MCTS for medium difficulty
+    if (gameState.aiDifficulty === 'medium') {
+        const opponentPos = aiRole === 'soul' ? gameState.ghoulPosition : gameState.soulPosition;
+        console.log(`🧠 ${aiRole.toUpperCase()} AI using Monte Carlo Tree Search...`);
+        console.log(`   AI at (${aiPos.row}, ${aiPos.col})`);
+        console.log(`   Target: ${targetIsShard ? 'Shard' : 'Position'} at (${targetPos.row}, ${targetPos.col})`);
+        console.log(`   Opponent at (${opponentPos.row}, ${opponentPos.col})`);
+        console.log(`   ${aiRole === 'soul' ? 'Soul' : 'Ghoul'} shards: ${aiRole === 'soul' ? gameState.soulShards : gameState.ghoulShards}`);
+        const mctsMove = runMCTS(aiPos, targetPos, aiRole, targetIsShard, 100);
+        if (mctsMove && canMoveInDirection(aiPos, mctsMove)) {
+            console.log(`✓ MCTS chose move: ${mctsMove}`);
+            return mctsMove;
+        }
+        console.log('⚠ MCTS failed, using fallback pathfinding');
     }
     
     return calculateBestDirection(aiPos, targetPos);

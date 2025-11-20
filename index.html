@@ -345,7 +345,7 @@
                         <strong>Powers:</strong><br>
                         <em>None</em>
                     </div>
-                    <button class="power-btn" onclick="showPowerUpModal('soul')">💎 Buy Power-Up</button>
+                    <button class="power-btn" onclick="showObjectiveModal('soul')">� View Objective</button>
                 </div>
 
                 <!-- Center - Board and Controls -->
@@ -414,7 +414,7 @@
                         <strong>Powers:</strong><br>
                         <em>None</em>
                     </div>
-                    <button class="power-btn" onclick="showPowerUpModal('ghoul')">💎 Buy Power-Up</button>
+                    <button class="power-btn" onclick="showObjectiveModal('ghoul')">� View Objective</button>
                 </div>
             </div>
 
@@ -461,6 +461,15 @@
             <h2>💎 Buy Power-Up</h2>
             <div id="powerup-list" class="powerup-list"></div>
             <button class="action-btn secondary-btn" onclick="closePowerUpModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Objective Modal -->
+    <div id="objective-modal" class="modal">
+        <div class="modal-content powerup-content">
+            <h2 id="objective-title">📋 Your Objective</h2>
+            <div id="objective-content" class="powerup-list"></div>
+            <button class="action-btn secondary-btn" onclick="closeObjectiveModal()">Close</button>
         </div>
     </div>
 
