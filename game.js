@@ -33,7 +33,9 @@ let gameState = {
     aiIsThinking: false,
     isEndingTurn: false,
     lastAIPosition: null,
-    aiStuckCount: 0
+    aiStuckCount: 0,
+    battleReady: false,
+    inBattle: false
 };
 
 // Initialize game
@@ -116,6 +118,10 @@ function startGame() {
     gameState.soulAttackBonus = 0;
     gameState.soulCancelSnuff = 0;
     gameState.ghoulSkipTurn = false;
+    gameState.candleDropTurnsLeft = 0;
+    gameState.candleDropMaxTurns = 0;
+    gameState.battleReady = false;
+    gameState.inBattle = false;
     gameState.aiIsThinking = false;
     
     // Initialize board
@@ -126,6 +132,7 @@ function startGame() {
     
     // Update UI
     updateUI();
+    updateBattleButtonState();
     showToast('Game started! Soul must reach the candle in the center.');
     
     // If AI is Soul and player is Ghoul, AI goes first
@@ -284,6 +291,12 @@ function movePlayer(direction) {
         return;
     }
     
+    // Don't move during an active battle
+    if (gameState.inBattle) {
+        showToast('Resolve the battle first!');
+        return;
+    }
+    
     const player = gameState.currentPlayer;
     const position = player === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
     
@@ -304,6 +317,22 @@ function movePlayer(direction) {
         case 'right':
             newCol++;
             break;
+        case 'up-left':
+            newRow--;
+            newCol--;
+            break;
+        case 'up-right':
+            newRow--;
+            newCol++;
+            break;
+        case 'down-left':
+            newRow++;
+            newCol--;
+            break;
+        case 'down-right':
+            newRow++;
+            newCol++;
+            break;
     }
     
     // Check boundaries
@@ -322,7 +351,8 @@ function movePlayer(direction) {
     // Check what's on the new cell BEFORE clearing old position
     const cellContent = getCellContent(newRow, newCol);
     
-    // Check if ghoul is trying to pick up initial candle
+    // Check if ghoul is trying to pick up INITIAL candle (at game start, before soul picks it up)
+    // candleWasPickedUp = false means it's the initial candle, not a dropped one
     if (cellContent === '🕯️' && player === 'ghoul' && !gameState.candleWasPickedUp) {
         showToast('👹 Ghoul cannot move onto the candle! Soul must get it first.');
         return;
@@ -338,6 +368,7 @@ function movePlayer(direction) {
     // Handle cell contents
     if (cellContent === '🕯️') {
         if (player === 'soul' && !gameState.soulHasCandle) {
+            // Soul picks up initial candle
             gameState.soulHasCandle = true;
             gameState.candleWasPickedUp = true;
             gameState.candlePosition = null;
@@ -345,7 +376,7 @@ function movePlayer(direction) {
             gameState.candleDropMaxTurns = 0;
             showToast('🕯️ Soul obtained the candle! Now survive the battles!');
         } else if (player === 'ghoul' && gameState.candlePosition) {
-            // Ghoul picks up dropped candle - wins the game
+            // Ghoul picks up dropped candle - WINS THE GAME!
             showToast('👹 Ghoul got the dropped candle! Darkness wins!');
             gameState.movesLeft = 0;
             gameState.candlePosition = null;
@@ -372,17 +403,27 @@ function movePlayer(direction) {
     // Update moves
     gameState.movesLeft--;
     
-    // Check for battle (adjacent positions) - only if soul has candle
-    if (gameState.soulHasCandle && checkForBattle()) {
-        gameState.movesLeft = 0; // End movement when battle starts
-        initiateBattle();
-    } else if (gameState.movesLeft === 0) {
-        // Auto-end turn when moves are exhausted
-        setTimeout(() => {
-            endTurn();
-        }, 500);
+    // Check battle readiness (only when Soul has candle and not already in/pending battle)
+    if (gameState.soulHasCandle && !gameState.inBattle && !gameState.battleReady && checkForBattle()) {
+        gameState.movesLeft = 0;
+        gameState.moveDirection = null;
+        gameState.battleReady = true;
+        showToast('⚔️ Battle ready! Click "Start Battle" to resolve it.');
+        updateUI();
+        updateBattleButtonState();
+        return; // stop movement, wait for battle
     }
     
+    // If no moves left and no pending battle, auto end the turn
+    if (gameState.movesLeft <= 0) {
+        gameState.movesLeft = 0;
+        gameState.moveDirection = null;
+        updateUI();
+        endTurn();
+        return;
+    }
+    
+    // Otherwise just redraw and continue same turn
     updateUI();
 }
 
@@ -436,6 +477,28 @@ function checkForBattle() {
     
     // Adjacent if one space away (not diagonal)
     return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+}
+
+// Called by the "Start Battle" button
+function startBattle() {
+    if (!gameState.soulHasCandle) {
+        showToast('Battle only happens once Soul has the candle.');
+        return;
+    }
+
+    if (!checkForBattle()) {
+        showToast('No battle available – players are not adjacent.');
+        gameState.battleReady = false;
+        updateBattleButtonState();
+        updateUI();
+        return;
+    }
+
+    gameState.battleReady = false;
+    gameState.inBattle = true;
+
+    updateBattleButtonState();
+    initiateBattle();
 }
 
 // Initiate battle
@@ -917,10 +980,20 @@ function closeBattleModal() {
     document.getElementById('ghoul-roll').textContent = '?';
     document.getElementById('battle-result').innerHTML = '';
     document.getElementById('battle-powerups').style.display = 'none';
+    
+    // Reset battle flags
+    gameState.inBattle = false;
+    gameState.battleReady = false;
+    updateBattleButtonState();
 }
 
 // End turn
 function endTurn() {
+    if (gameState.battleReady) {
+        showToast('Resolve the pending battle before ending the turn!');
+        return;
+    }
+    
     // Prevent multiple simultaneous endTurn calls
     if (gameState.isEndingTurn) {
         return;
@@ -1048,6 +1121,7 @@ function updateUI() {
     }
     
     updatePowerUps();
+    updateBattleButtonState();
 }
 
 // Update power-ups display
@@ -1126,6 +1200,9 @@ function endGame(winner) {
     
     modal.classList.add('active');
     gameState.gameStarted = false;
+    gameState.battleReady = false;
+    gameState.inBattle = false;
+    updateBattleButtonState();
 }
 
 // Close win modal
@@ -1270,7 +1347,7 @@ function respawnShards(count) {
             row = Math.floor(Math.random() * gameState.boardSize);
             col = Math.floor(Math.random() * gameState.boardSize);
         } while (isCellOccupied(row, col));
-        
+
         gameState.shardsOnBoard.push({ row, col });
         updateCell(row, col, '💎');
     }
@@ -1279,7 +1356,12 @@ function respawnShards(count) {
     }
 }
 
-function teleportGhoul() {
+// Update battle button state
+function updateBattleButtonState() {
+    const btn = document.getElementById('start-battle-btn');
+    if (!btn) return;
+    btn.disabled = !gameState.battleReady;
+}function teleportGhoul() {
     const soulPos = gameState.soulPosition;
     const ghoulPos = gameState.ghoulPosition;
     
@@ -1427,6 +1509,39 @@ function makeAIMove() {
     // Get direction to move
     const direction = getAIDirection();
     
+    // Check if AI (ghoul) is about to move onto dropped candle - prioritize this over battle!
+    let movingToDroppedCandle = false;
+    
+    if (aiRole === 'ghoul' && gameState.candlePosition && direction) {
+        // Check if the next move will be onto the dropped candle
+        const nextPos = { row: aiPos.row, col: aiPos.col };
+        switch(direction) {
+            case 'up': nextPos.row--; break;
+            case 'down': nextPos.row++; break;
+            case 'left': nextPos.col--; break;
+            case 'right': nextPos.col++; break;
+            case 'up-left': nextPos.row--; nextPos.col--; break;
+            case 'up-right': nextPos.row--; nextPos.col++; break;
+            case 'down-left': nextPos.row++; nextPos.col--; break;
+            case 'down-right': nextPos.row++; nextPos.col++; break;
+        }
+        if (nextPos.row === gameState.candlePosition.row && 
+            nextPos.col === gameState.candlePosition.col) {
+            movingToDroppedCandle = true;
+        }
+    }
+    
+    // Check if battle is ready (AI moved next to opponent)
+    // BUT don't start battle if ghoul is about to pick up dropped candle (instant win)
+    if (!movingToDroppedCandle && gameState.battleReady && gameState.soulHasCandle && checkForBattle()) {
+        gameState.aiIsThinking = false;
+        gameState.lastAIPosition = null;
+        gameState.aiStuckCount = 0;
+        // Trigger battle after a short delay
+        setTimeout(() => startBattle(), 800);
+        return;
+    }
+    
     if (direction) {
         gameState.lastAIPosition = { row: aiPos.row, col: aiPos.col };
         movePlayer(direction);
@@ -1506,15 +1621,14 @@ function getAIDirection() {
             targetPos = furthestCorner;
         }
     } else {
-        // Ghoul AI: Check if should collect shards or go for dropped candle
-        const shouldCollectShards = gameState.aiDifficulty === 'hard' || 
-                                     (gameState.aiDifficulty === 'medium' && Math.random() < 0.5);
+        // Ghoul AI: Prioritize getting 3 shards first, then chase Soul
+        const needsShards = gameState.ghoulShards < 3;
         
         // Find nearest shard
         let nearestShard = null;
         let nearestShardDist = Infinity;
         
-        if (shouldCollectShards && gameState.shardsOnBoard.length > 0) {
+        if (gameState.shardsOnBoard.length > 0) {
             for (const shard of gameState.shardsOnBoard) {
                 const dist = Math.abs(aiPos.row - shard.row) + Math.abs(aiPos.col - shard.col);
                 if (dist < nearestShardDist) {
@@ -1524,21 +1638,26 @@ function getAIDirection() {
             }
         }
         
-        // Ghoul priorities: dropped candle > nearby shards > chase soul
-        // BUT if at same position as soul (e.g., after respawn), move toward center
+        // Ghoul priorities:
+        // 1. Dropped candle from battle (ONLY if it was dropped, NOT the initial candle!)
+        // 2. Collect shards until has 3 (to be able to snuff) - ALL difficulties do this
+        // 3. Chase soul once has 3+ shards
         const atSamePosition = aiPos.row === gameState.soulPosition.row && 
                                aiPos.col === gameState.soulPosition.col;
         
-        if (gameState.candlePosition) {
-            // Dropped candle exists - go for it!
+        // Only target candle if it's DROPPED (candleWasPickedUp = true), not initial candle
+        if (gameState.candlePosition && gameState.candleWasPickedUp) {
+            // Dropped candle exists (from battle) - always go for it to WIN!
             targetPos = gameState.candlePosition;
-        } else if (nearestShard && nearestShardDist <= 2) {
+        } else if (needsShards && nearestShard) {
+            // Need shards to snuff - ALL difficulties prioritize collecting them
             targetPos = nearestShard;
         } else if (atSamePosition) {
             // At same position as soul (e.g., after respawn) - move toward center to spread out
             const center = Math.floor(gameState.boardSize / 2);
             targetPos = { row: center, col: center };
         } else {
+            // Has 3+ shards - now chase soul
             targetPos = gameState.soulPosition;
         }
     }
@@ -1547,8 +1666,19 @@ function getAIDirection() {
 }
 
 function canMoveInDirection(pos, direction) {
-    const newRow = pos.row + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0);
-    const newCol = pos.col + (direction === 'left' ? -1 : direction === 'right' ? 1 : 0);
+    let newRow = pos.row;
+    let newCol = pos.col;
+    
+    switch(direction) {
+        case 'up': newRow--; break;
+        case 'down': newRow++; break;
+        case 'left': newCol--; break;
+        case 'right': newCol++; break;
+        case 'up-left': newRow--; newCol--; break;
+        case 'up-right': newRow--; newCol++; break;
+        case 'down-left': newRow++; newCol--; break;
+        case 'down-right': newRow++; newCol++; break;
+    }
     
     // Check bounds
     if (newRow < 0 || newRow >= gameState.boardSize || newCol < 0 || newCol >= gameState.boardSize) {
@@ -1564,14 +1694,21 @@ function calculateBestDirection(from, to) {
     
     const directions = [];
     
-    if (rowDiff < 0) directions.push({ dir: 'up', dist: Math.abs(rowDiff) });
-    if (rowDiff > 0) directions.push({ dir: 'down', dist: Math.abs(rowDiff) });
-    if (colDiff < 0) directions.push({ dir: 'left', dist: Math.abs(colDiff) });
-    if (colDiff > 0) directions.push({ dir: 'right', dist: Math.abs(colDiff) });
+    // Add cardinal and diagonal directions
+    if (rowDiff < 0 && colDiff === 0) directions.push({ dir: 'up', dist: Math.abs(rowDiff) });
+    if (rowDiff > 0 && colDiff === 0) directions.push({ dir: 'down', dist: Math.abs(rowDiff) });
+    if (colDiff < 0 && rowDiff === 0) directions.push({ dir: 'left', dist: Math.abs(colDiff) });
+    if (colDiff > 0 && rowDiff === 0) directions.push({ dir: 'right', dist: Math.abs(colDiff) });
+    
+    // Add diagonal directions when both row and col differ
+    if (rowDiff < 0 && colDiff < 0) directions.push({ dir: 'up-left', dist: Math.abs(rowDiff) + Math.abs(colDiff) });
+    if (rowDiff < 0 && colDiff > 0) directions.push({ dir: 'up-right', dist: Math.abs(rowDiff) + Math.abs(colDiff) });
+    if (rowDiff > 0 && colDiff < 0) directions.push({ dir: 'down-left', dist: Math.abs(rowDiff) + Math.abs(colDiff) });
+    if (rowDiff > 0 && colDiff > 0) directions.push({ dir: 'down-right', dist: Math.abs(rowDiff) + Math.abs(colDiff) });
     
     // If AI is stuck (hit wall repeatedly), pick any valid direction
     if (gameState.aiStuckCount >= 2) {
-        const allDirs = ['up', 'down', 'left', 'right'];
+        const allDirs = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
         const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
         if (validDirs.length === 0) return null;
         gameState.aiStuckCount = 0; // Reset after finding alternative
@@ -1580,7 +1717,7 @@ function calculateBestDirection(from, to) {
     
     // If already at target or no directions, pick any valid direction
     if (directions.length === 0) {
-        const allDirs = ['up', 'down', 'left', 'right'];
+        const allDirs = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
         const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
         if (validDirs.length === 0) return null;
         return validDirs[Math.floor(Math.random() * validDirs.length)];
@@ -1590,7 +1727,7 @@ function calculateBestDirection(from, to) {
     const validDirections = directions.filter(d => canMoveInDirection(from, d.dir));
     if (validDirections.length === 0) {
         // All preferred directions blocked - pick any valid one
-        const allDirs = ['up', 'down', 'left', 'right'];
+        const allDirs = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
         const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
         if (validDirs.length === 0) return null;
         return validDirs[Math.floor(Math.random() * validDirs.length)];
