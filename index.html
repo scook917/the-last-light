@@ -232,7 +232,7 @@
             </div>
 
             <div class="about-section">
-                <p class="version">Version 1.0.0</p>
+                <p class="version">Version 1.1.0</p>
             </div>
 
             <button class="action-btn primary-btn back-btn" onclick="showScreen('main-menu')">
@@ -244,12 +244,16 @@
     <!-- Game Screen -->
     <div id="game-screen" class="screen">
         <div class="game-container">
-            <!-- Header -->
-            <div class="game-header">
-                <button class="quit-btn" onclick="quitGame()">← Quit to Menu</button>
-                <h2>🕯️ The Last Light</h2>
-                <div id="current-player" class="current-player">Player: 👻 Soul</div>
-            </div>
+          
+            <!-- changed - Teresa  -->
+<!-- Header -->
+<div class="game-header">
+    <button class="quit-btn" onclick="quitGame()">← Quit to Menu</button>
+    <h2>🕯️ The Last Light</h2>
+    <div id="current-player" class="current-player">Current Turn: 👻 Soul</div>
+</div>
+            <!-- changed - Teresa  -->
+
 
             <!-- Game Info Bar -->
             <div class="game-info-bar">
@@ -306,19 +310,35 @@
                         </div>
 
                         <div class="movement-controls">
-                            <h4>Move</h4>
-                            <div class="movement-grid">
-                                <div></div>
-                                <button class="move-btn" onclick="movePlayer('up')">↑</button>
-                                <div></div>
-                                <button class="move-btn" onclick="movePlayer('left')">←</button>
-                                <button class="action-btn secondary-btn" onclick="endTurn()">End Turn</button>
-                                <button class="move-btn" onclick="movePlayer('right')">→</button>
-                                <div></div>
-                                <button class="move-btn" onclick="movePlayer('down')">↓</button>
-                                <div></div>
-                            </div>
-                        </div>
+    <h4>Move</h4>
+
+    <!-- changed - Teresa -->
+    <div class="movement-grid">
+        <!-- Row 1 -->
+        <button class="move-btn" onclick="movePlayer('up-left')">↖</button>
+        <button class="move-btn" onclick="movePlayer('up')">↑</button>
+        <button class="move-btn" onclick="movePlayer('up-right')">↗</button>
+
+        <!-- Row 2 -->
+        <button class="move-btn" onclick="movePlayer('left')">←</button>
+        <button class="action-btn secondary-btn" onclick="endTurn()">End Turn</button>
+        <button class="move-btn" onclick="movePlayer('right')">→</button>
+
+        <!-- Row 3 -->
+        <button class="move-btn" onclick="movePlayer('down-left')">↙</button>
+        <button class="move-btn" onclick="movePlayer('down')">↓</button>
+        <button class="move-btn" onclick="movePlayer('down-right')">↘</button>
+    </div>
+
+    <!-- New battle button (see section 3) -->
+    <button id="start-battle-btn"
+            class="action-btn primary-btn"
+            onclick="startBattle()"
+            disabled>
+        ⚔️ Start Battle
+    </button>
+</div>
+    <!-- changed - Teresa -->
                     </div>
                 </div>
 
