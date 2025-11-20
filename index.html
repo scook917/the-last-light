@@ -35,8 +35,61 @@
     <div id="setup-screen" class="screen">
         <div class="setup-container">
             <h2>⚔️ Choose Your Battle ⚔️</h2>
-            <p class="setup-description">Select the map size to determine the number of battles</p>
             
+            <!-- Player Role Selection -->
+            <p class="setup-description">Choose your role</p>
+            <div class="player-selection">
+                <div class="selection-card active" data-role="soul" onclick="selectRole('soul')">
+                    <div class="selection-icon">👻</div>
+                    <h3>Soul</h3>
+                    <p>Escape with the candle</p>
+                </div>
+                <div class="selection-card" data-role="ghoul" onclick="selectRole('ghoul')">
+                    <div class="selection-icon">👹</div>
+                    <h3>Ghoul</h3>
+                    <p>Hunt the Soul</p>
+                </div>
+            </div>
+            
+            <!-- Game Mode Selection -->
+            <p class="setup-description">Choose game mode</p>
+            <div class="mode-selection">
+                <div class="selection-card active" data-mode="2player" onclick="selectMode('2player')">
+                    <div class="selection-icon">👥</div>
+                    <h3>2 Players</h3>
+                    <p>Local multiplayer</p>
+                </div>
+                <div class="selection-card" data-mode="ai" onclick="selectMode('ai')">
+                    <div class="selection-icon">🤖</div>
+                    <h3>vs AI</h3>
+                    <p>Play against computer</p>
+                </div>
+            </div>
+            
+            <!-- AI Difficulty (hidden by default) -->
+            <div id="ai-difficulty" style="display: none;">
+                <p class="setup-description">Choose AI difficulty</p>
+                <div class="difficulty-selection">
+                    <div class="selection-card active" data-difficulty="easy" onclick="selectDifficulty('easy')">
+                        <div class="selection-icon">😊</div>
+                        <h3>Easy</h3>
+                        <p>Random moves</p>
+                    </div>
+                    <div class="selection-card" data-difficulty="medium" onclick="selectDifficulty('medium')">
+                        <div class="selection-icon">😐</div>
+                        <h3>Medium</h3>
+                        <p>Mixed strategy</p>
+                    </div>
+                    <div class="selection-card" data-difficulty="hard" onclick="selectDifficulty('hard')">
+                        <div class="selection-icon">😈</div>
+                        <h3>Hard</h3>
+                        <p>Optimal play</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Map Size Selection -->
+            <p class="setup-description">Select the map size to determine the number of battles</p>
             <div class="size-options">
                 <div class="size-card size-btn active" data-size="small">
                     <div class="size-icon">👻</div>

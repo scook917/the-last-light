@@ -26,7 +26,14 @@ let gameState = {
     soulCancelSnuff: 0,
     ghoulSkipTurn: false,
     candleDropTurnsLeft: 0,
-    candleDropMaxTurns: 0
+    candleDropMaxTurns: 0,
+    gameMode: '2player',
+    aiDifficulty: 'medium',
+    playerRole: 'soul',
+    aiIsThinking: false,
+    isEndingTurn: false,
+    lastAIPosition: null,
+    aiStuckCount: 0
 };
 
 // Initialize game
@@ -44,6 +51,28 @@ document.querySelectorAll('.size-btn').forEach(btn => {
         this.classList.add('active');
     });
 });
+
+// Selection functions
+function selectRole(role) {
+    gameState.playerRole = role;
+    document.querySelectorAll('[data-role]').forEach(card => card.classList.remove('active'));
+    document.querySelector(`[data-role="${role}"]`).classList.add('active');
+}
+
+function selectMode(mode) {
+    gameState.gameMode = mode;
+    document.querySelectorAll('[data-mode]').forEach(card => card.classList.remove('active'));
+    document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+    
+    // Show/hide AI difficulty
+    document.getElementById('ai-difficulty').style.display = mode === 'ai' ? 'block' : 'none';
+}
+
+function selectDifficulty(difficulty) {
+    gameState.aiDifficulty = difficulty;
+    document.querySelectorAll('[data-difficulty]').forEach(card => card.classList.remove('active'));
+    document.querySelector(`[data-difficulty="${difficulty}"]`).classList.add('active');
+}
 
 // Start game
 function startGame() {
@@ -87,6 +116,7 @@ function startGame() {
     gameState.soulAttackBonus = 0;
     gameState.soulCancelSnuff = 0;
     gameState.ghoulSkipTurn = false;
+    gameState.aiIsThinking = false;
     
     // Initialize board
     initializeBoard();
@@ -97,7 +127,16 @@ function startGame() {
     // Update UI
     updateUI();
     showToast('Game started! Soul must reach the candle in the center.');
-    showToast('Soul: Roll the dice to move!');
+    
+    // If AI is Soul and player is Ghoul, AI goes first
+    if (gameState.gameMode === 'ai' && gameState.playerRole === 'ghoul') {
+        setTimeout(() => {
+            showToast('AI Soul is rolling...');
+            setTimeout(() => rollDice(), 800);
+        }, 1500);
+    } else {
+        showToast('Soul: Roll the dice to move!');
+    }
 }
 
 // Initialize board
@@ -227,6 +266,13 @@ function rollDice() {
             
             showToast(`${gameState.currentPlayer === 'soul' ? '👻 Soul' : '👹 Ghoul'} rolled a ${gameState.diceRoll}!`);
             updateUI();
+            
+            // If AI's turn, start making moves
+            if (isAITurn()) {
+                gameState.aiIsThinking = true;
+                updateUI();
+                setTimeout(() => makeAIMove(), 800);
+            }
         }
     }, 100);
 }
@@ -240,12 +286,6 @@ function movePlayer(direction) {
     
     const player = gameState.currentPlayer;
     const position = player === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
-    
-    // Check if can change direction
-    if (gameState.moveDirection !== null && gameState.moveDirection !== direction && !gameState.canZigzag) {
-        showToast('Cannot change direction! You can only move in one direction per turn.');
-        return;
-    }
     
     // Calculate new position
     let newRow = position.row;
@@ -268,9 +308,7 @@ function movePlayer(direction) {
     
     // Check boundaries
     if (newRow < 0 || newRow >= gameState.boardSize || newCol < 0 || newCol >= gameState.boardSize) {
-        showToast('Hit a wall! You can now change direction for remaining moves.');
-        // After hitting a wall, allow direction change for remaining moves
-        gameState.moveDirection = null;
+        showToast('Hit a wall!');
         return;
     }
     
@@ -281,17 +319,12 @@ function movePlayer(direction) {
         return;
     }
     
-    // Move is valid
-    gameState.moveDirection = direction;
-    
     // Check what's on the new cell BEFORE clearing old position
     const cellContent = getCellContent(newRow, newCol);
     
     // Check if ghoul is trying to pick up initial candle
     if (cellContent === '🕯️' && player === 'ghoul' && !gameState.candleWasPickedUp) {
-        showToast('👹 Ghoul cannot move onto the candle! Soul must get it first. You can now change direction.');
-        // After hitting the candle, allow direction change for remaining moves (like hitting a wall)
-        gameState.moveDirection = null;
+        showToast('👹 Ghoul cannot move onto the candle! Soul must get it first.');
         return;
     }
     
@@ -504,16 +537,37 @@ function resolveBattle(soulRoll, ghoulRoll) {
         const canUseAttack = (gameState.boardSize === 8 || gameState.boardSize === 10) && gameState.soulShards >= attackCost;
         
         if (canUseAttack) {
-            // Offer Soul the choice to use +1 Attack
+            // Check if Soul is AI
+            if (gameState.gameMode === 'ai' && gameState.playerRole === 'ghoul') {
+                // AI Soul decides whether to use attack bonus
+                resultDiv.innerHTML = '<strong>👻 Soul wins the battle!</strong><br>AI Soul is deciding...';
+                
+                setTimeout(() => {
+                    // Easy AI: never use attack
+                    // Medium AI: 50% chance
+                    // Hard AI: 70% chance
+                    const shouldUseAttack = (gameState.aiDifficulty === 'hard' && Math.random() < 0.7) ||
+                                           (gameState.aiDifficulty === 'medium' && Math.random() < 0.5);
+                    
+                    if (shouldUseAttack) {
+                        soulUseAttackBonus();
+                    } else {
+                        soulDeclineAttack();
+                    }
+                }, 1500);
+                return;
+            }
+            
+            // Human Soul - offer the choice to attack
             resultDiv.innerHTML = `
                 <div style="text-align: center;">
                     <strong>👻 Soul wins the battle!</strong><br>
-                    <p style="margin: 15px 0;">⚔️ You have ${gameState.soulShards} shards.<br>Use ${attackCost} for +1 Attack bonus for next battle?</p>
+                    <p style="margin: 15px 0;">⚔️ You have ${gameState.soulShards} shards.<br>Attack Ghoul to remove 1 shard? (Costs ${attackCost} shards)</p>
                     <button id="soul-use-attack-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer;">
-                        ⚔️ Use +1 Attack (${attackCost} shards)
+                        ⚔️ Attack Ghoul (${attackCost} shards)
                     </button>
                     <button id="soul-decline-attack-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #666;">
-                        ❌ No Thanks
+                        ❌ Don't Attack
                     </button>
                 </div>
             `;
@@ -549,14 +603,50 @@ function resolveBattle(soulRoll, ghoulRoll) {
         const canSnuff = gameState.ghoulShards >= 3;
         const canDrop = gameState.ghoulShards >= dropCandleCost;
         
-        // Build Ghoul's options
+        // Check if Ghoul is AI
+        if (gameState.gameMode === 'ai' && gameState.playerRole === 'soul') {
+            // AI Ghoul decides what to do
+            resultDiv.innerHTML = '<strong>👹 Ghoul wins the battle!</strong><br>AI Ghoul is deciding...';
+            
+            setTimeout(() => {
+                // Hard AI: always snuff if possible, else drop if possible
+                // Medium AI: 70% snuff, 50% drop if can't snuff, else nothing
+                // Easy AI: 30% snuff, 30% drop, otherwise nothing
+                
+                if (canSnuff) {
+                    const shouldSnuff = gameState.aiDifficulty === 'hard' || 
+                                       (gameState.aiDifficulty === 'medium' && Math.random() < 0.7) ||
+                                       (gameState.aiDifficulty === 'easy' && Math.random() < 0.3);
+                    if (shouldSnuff) {
+                        ghoulChooseSnuff();
+                        return;
+                    }
+                }
+                
+                if (canDrop) {
+                    const shouldDrop = gameState.aiDifficulty === 'hard' || 
+                                      (gameState.aiDifficulty === 'medium' && Math.random() < 0.5) ||
+                                      (gameState.aiDifficulty === 'easy' && Math.random() < 0.3);
+                    if (shouldDrop) {
+                        ghoulChooseDrop();
+                        return;
+                    }
+                }
+                
+                // Do nothing
+                ghoulChooseNothing();
+            }, 1500);
+            return;
+        }
+        
+        // Human Ghoul - build options UI
         let ghoulOptions = '<div style="text-align: center;"><strong>👹 Ghoul wins the battle!</strong><br><p style="margin: 15px 0;">Choose your action:</p>';
         
         if (canSnuff) {
             ghoulOptions += `<button id="ghoul-snuff-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #d32f2f;">💀 Snuff the Candle (3 shards)</button><br>`;
         }
         if (canDrop) {
-            ghoulOptions += `<button id="ghoul-drop-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer;">� Drop Candle (${dropCandleCost} shards)</button><br>`;
+            ghoulOptions += `<button id="ghoul-drop-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer;">💥 Drop Candle (${dropCandleCost} shards)</button><br>`;
         }
         ghoulOptions += `<button id="ghoul-nothing-btn" style="margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #666;">❌ Do Nothing (Soul escapes)</button></div>`;
         
@@ -640,14 +730,20 @@ function declineCancelSnuff() {
     }, 2000);
 }
 
-// Soul chooses to use +1 Attack bonus
+// Soul chooses to attack the Ghoul
 function soulUseAttackBonus() {
     const attackCost = gameState.boardSize === 8 ? 2 : 3;
     gameState.soulShards -= attackCost;
-    gameState.soulAttackBonus = 1;
+    
+    // Remove 1 shard from Ghoul and respawn it
+    if (gameState.ghoulShards > 0) {
+        gameState.ghoulShards -= 1;
+        respawnShards(1);
+    }
+    
     const resultDiv = document.getElementById('battle-result');
-    resultDiv.innerHTML = '⚔️ <strong>Soul gains +1 Attack!</strong><br>Both players return to spawn.';
-    showToast(`⚔️ Soul used +1 Attack (${attackCost} shards)! Bonus applies to next battle.`);
+    resultDiv.innerHTML = '⚔️ <strong>Soul attacks the Ghoul!</strong><br>Ghoul loses 1 shard. Both players return to spawn.';
+    showToast(`⚔️ Soul attacked the Ghoul (${attackCost} shards)! Ghoul loses 1 shard.`);
     gameState.battlesCompleted++;
     respawnShards(attackCost);
     updateUI();
@@ -695,7 +791,27 @@ function ghoulChooseSnuff() {
     
     // Check if Soul can afford to cancel
     if (gameState.soulShards >= cancelSnuffCost) {
-        // Offer Soul the choice to use Cancel Snuff
+        // Check if Soul is AI
+        if (gameState.gameMode === 'ai' && gameState.playerRole === 'ghoul') {
+            // AI Soul decides whether to use Cancel Snuff
+            const shouldUse = gameState.aiDifficulty === 'hard' || 
+                            (gameState.aiDifficulty === 'medium' && Math.random() < 0.8) ||
+                            (gameState.aiDifficulty === 'easy' && Math.random() < 0.5);
+            
+            const resultDiv = document.getElementById('battle-result');
+            resultDiv.innerHTML = `<strong>👹 Ghoul tries to snuff the candle!</strong><br>AI Soul is deciding...`;
+            
+            setTimeout(() => {
+                if (shouldUse) {
+                    useCancelSnuff();
+                } else {
+                    declineCancelSnuff();
+                }
+            }, 1500);
+            return;
+        }
+        
+        // Human Soul - offer the choice
         const resultDiv = document.getElementById('battle-result');
         resultDiv.innerHTML = `
             <div style="text-align: center;">
@@ -717,12 +833,9 @@ function ghoulChooseSnuff() {
         }, 100);
     } else {
         // Soul can't afford to cancel - Ghoul wins
-        gameState.ghoulShards -= 3;
-        respawnShards(3);
         const resultDiv = document.getElementById('battle-result');
         resultDiv.innerHTML = '👹 <strong>Ghoul snuffs the candle!</strong><br>Darkness consumes all...';
         showToast('💀 Ghoul snuffed the candle! Game Over!');
-        updateUI();
         setTimeout(() => {
             closeBattleModal();
             endGame('ghoul');
@@ -808,13 +921,20 @@ function closeBattleModal() {
 
 // End turn
 function endTurn() {
+    // Prevent multiple simultaneous endTurn calls
+    if (gameState.isEndingTurn) {
+        return;
+    }
+    
+    gameState.isEndingTurn = true;
     gameState.movesLeft = 0;
     gameState.moveDirection = null;
+    gameState.aiIsThinking = false;
     
     // Reset dice display
     document.getElementById('dice').textContent = '?';
     
-    // Switch player first to determine if full turn cycle completed
+    // Switch player
     const previousPlayer = gameState.currentPlayer;
     gameState.currentPlayer = gameState.currentPlayer === 'soul' ? 'ghoul' : 'soul';
     
@@ -850,6 +970,14 @@ function endTurn() {
     }
     
     updateUI();
+    
+    // Release the endTurn lock
+    gameState.isEndingTurn = false;
+    
+    // If AI's turn, trigger roll
+    if (isAITurn()) {
+        setTimeout(() => rollDice(), 1500);
+    }
 }
 
 // Update UI
@@ -906,7 +1034,18 @@ function updateUI() {
     gameState.canZigzag = hasZigzag;
     
     // Enable/disable roll button
-    document.getElementById('roll-btn').disabled = gameState.movesLeft > 0;
+    const rollBtn = document.getElementById('roll-btn');
+    const aiTurn = isAITurn();
+    rollBtn.disabled = gameState.movesLeft > 0 || aiTurn || gameState.aiIsThinking;
+    
+    // Gray out button during AI turn
+    if (aiTurn || gameState.aiIsThinking) {
+        rollBtn.style.opacity = '0.4';
+        rollBtn.style.cursor = 'not-allowed';
+    } else {
+        rollBtn.style.opacity = '1';
+        rollBtn.style.cursor = 'pointer';
+    }
     
     updatePowerUps();
 }
@@ -921,7 +1060,7 @@ function updatePowerUps() {
     ghoulPowers.innerHTML = '<strong>Powers:</strong><br>';
     
     // Soul powers
-    if (gameState.soulShards >= 1) {
+    if (gameState.boardSize === 8 && gameState.soulShards >= 1) {
         soulPowers.innerHTML += '• Re-roll<br>';
     }
     if ((gameState.boardSize === 8 || gameState.boardSize === 10) && gameState.soulShards >= 2) {
@@ -1010,14 +1149,14 @@ function showPowerUpModal(player) {
     list.innerHTML = '';
     
     if (player === 'soul') {
-        // Re-roll power (all maps, only outside battle)
-        if (gameState.soulShards >= 1) {
+        // Re-roll power (only on small map, only outside battle)
+        if (gameState.boardSize === 8 && gameState.soulShards >= 1) {
             list.innerHTML += `
                 <div class="powerup-item">
                     <div class="powerup-info">
                         <div class="powerup-name">🎲 Re-roll</div>
                         <div class="powerup-cost">Cost: 1 shard</div>
-                        <div class="powerup-description">Re-roll your dice (usable after rolling)</div>
+                        <div class="powerup-description">Re-roll your dice (usable outside battle)</div>
                     </div>
                     <button class="powerup-buy-btn" onclick="buyPowerUp('soul', 'reroll', 1)">Buy</button>
                 </div>
@@ -1070,12 +1209,6 @@ function closePowerUpModal() {
 }
 
 function buyPowerUp(player, powerType, cost) {
-    // Check if it's the right player's turn
-    if (player !== gameState.currentPlayer) {
-        showToast('Not your turn!');
-        return;
-    }
-    
     if (player === 'soul') {
         if (gameState.soulShards < cost) {
             showToast('Not enough shards!');
@@ -1086,19 +1219,12 @@ function buyPowerUp(player, powerType, cost) {
         
         switch(powerType) {
             case 'reroll':
-                // Can only use after rolling (movesLeft > 0) but before moving
-                if (gameState.movesLeft > 0 && gameState.diceRoll === gameState.movesLeft) {
+                if (gameState.movesLeft === 0) {
                     showToast('💎 Soul used Re-roll!');
-                    // Reset moves to allow re-roll
-                    gameState.movesLeft = 0;
                     rollDice();
                     respawnShards(cost);
-                } else if (gameState.movesLeft === 0) {
-                    showToast('Roll the dice first before using re-roll!');
-                    gameState.soulShards += cost; // Refund
-                    return;
                 } else {
-                    showToast('Cannot re-roll after you\'ve started moving!');
+                    showToast('Can only use re-roll when you have no moves left!');
                     gameState.soulShards += cost; // Refund
                     return;
                 }
@@ -1114,19 +1240,12 @@ function buyPowerUp(player, powerType, cost) {
         
         switch(powerType) {
             case 'reroll':
-                // Can only use after rolling (movesLeft > 0) but before moving
-                if (gameState.movesLeft > 0 && gameState.diceRoll === gameState.movesLeft) {
+                if (gameState.movesLeft === 0) {
                     showToast('💎 Ghoul used Re-roll!');
-                    // Reset moves to allow re-roll
-                    gameState.movesLeft = 0;
                     rollDice();
                     respawnShards(cost);
-                } else if (gameState.movesLeft === 0) {
-                    showToast('Roll the dice first before using re-roll!');
-                    gameState.ghoulShards += cost; // Refund
-                    return;
                 } else {
-                    showToast('Cannot re-roll after you\'ve started moving!');
+                    showToast('Can only use re-roll when you have no moves left!');
                     gameState.ghoulShards += cost; // Refund
                     return;
                 }
@@ -1269,6 +1388,230 @@ function dropCandle() {
     
     // Update soul position (remove candle visual)
     updateCell(gameState.soulPosition.row, gameState.soulPosition.col, '👻');
+}
+
+// AI Functions
+function isAITurn() {
+    if (gameState.gameMode !== 'ai') return false;
+    const aiRole = gameState.playerRole === 'soul' ? 'ghoul' : 'soul';
+    return gameState.currentPlayer === aiRole;
+}
+
+function makeAIMove() {
+    // Don't continue if AI stopped thinking (turn ended)
+    if (!gameState.aiIsThinking) {
+        return;
+    }
+    
+    if (gameState.movesLeft <= 0) {
+        // Done moving, end turn
+        gameState.aiIsThinking = false;
+        gameState.lastAIPosition = null;
+        gameState.aiStuckCount = 0;
+        setTimeout(() => endTurn(), 500);
+        return;
+    }
+    
+    // Check if AI is stuck (hasn't moved for 2+ attempts)
+    const aiRole = gameState.playerRole === 'soul' ? 'ghoul' : 'soul';
+    const aiPos = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
+    
+    if (gameState.lastAIPosition && 
+        gameState.lastAIPosition.row === aiPos.row && 
+        gameState.lastAIPosition.col === aiPos.col) {
+        gameState.aiStuckCount++;
+    } else {
+        gameState.aiStuckCount = 0;
+    }
+    
+    // Get direction to move
+    const direction = getAIDirection();
+    
+    if (direction) {
+        gameState.lastAIPosition = { row: aiPos.row, col: aiPos.col };
+        movePlayer(direction);
+        // Continue after a delay
+        setTimeout(() => makeAIMove(), 600);
+    } else {
+        // No valid move, end turn
+        gameState.movesLeft = 0;
+        gameState.aiIsThinking = false;
+        gameState.lastAIPosition = null;
+        gameState.aiStuckCount = 0;
+        setTimeout(() => endTurn(), 500);
+    }
+}
+
+function getAIDirection() {
+    const aiRole = gameState.playerRole === 'soul' ? 'ghoul' : 'soul';
+    const aiPos = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
+    
+    // AI can always change direction - choose best direction to target
+    let targetPos;
+    
+    if (aiRole === 'soul') {
+        // Soul AI: Check if should prioritize collecting shards (for harder difficulties)
+        const shouldCollectShards = (gameState.aiDifficulty === 'hard' || 
+                                     (gameState.aiDifficulty === 'medium' && Math.random() < 0.6)) &&
+                                     gameState.soulShards < gameState.maxSoulShards;
+        
+        // Find nearest shard if AI wants to collect and hasn't maxed out
+        let nearestShard = null;
+        let nearestShardDist = Infinity;
+        
+        if (shouldCollectShards && gameState.shardsOnBoard.length > 0) {
+            for (const shard of gameState.shardsOnBoard) {
+                const dist = Math.abs(aiPos.row - shard.row) + Math.abs(aiPos.col - shard.col);
+                if (dist < nearestShardDist) {
+                    nearestShardDist = dist;
+                    nearestShard = shard;
+                }
+            }
+        }
+        
+        // Prioritize targets based on situation
+        if (!gameState.soulHasCandle && gameState.candlePosition) {
+            // Candle exists (dropped or initial) - highest priority!
+            targetPos = gameState.candlePosition;
+        } else if (!gameState.soulHasCandle) {
+            // Don't have candle yet - go to center where it spawns
+            const center = Math.floor(gameState.boardSize / 2);
+            targetPos = { row: center, col: center };
+        } else if (nearestShard && gameState.soulShards < gameState.maxSoulShards) {
+            // Has candle - collect shards if available and not maxed out
+            targetPos = nearestShard;
+        } else {
+            // Has candle and max shards (or no shards available) - just evade ghoul
+            // Pick a random corner far from ghoul
+            const corners = [
+                { row: 0, col: 0 },
+                { row: 0, col: gameState.boardSize - 1 },
+                { row: gameState.boardSize - 1, col: 0 },
+                { row: gameState.boardSize - 1, col: gameState.boardSize - 1 }
+            ];
+            
+            // Find corner furthest from ghoul
+            const ghoulPos = gameState.ghoulPosition;
+            let furthestCorner = corners[0];
+            let maxDist = 0;
+            
+            for (const corner of corners) {
+                const dist = Math.abs(corner.row - ghoulPos.row) + Math.abs(corner.col - ghoulPos.col);
+                if (dist > maxDist) {
+                    maxDist = dist;
+                    furthestCorner = corner;
+                }
+            }
+            
+            targetPos = furthestCorner;
+        }
+    } else {
+        // Ghoul AI: Check if should collect shards or go for dropped candle
+        const shouldCollectShards = gameState.aiDifficulty === 'hard' || 
+                                     (gameState.aiDifficulty === 'medium' && Math.random() < 0.5);
+        
+        // Find nearest shard
+        let nearestShard = null;
+        let nearestShardDist = Infinity;
+        
+        if (shouldCollectShards && gameState.shardsOnBoard.length > 0) {
+            for (const shard of gameState.shardsOnBoard) {
+                const dist = Math.abs(aiPos.row - shard.row) + Math.abs(aiPos.col - shard.col);
+                if (dist < nearestShardDist) {
+                    nearestShardDist = dist;
+                    nearestShard = shard;
+                }
+            }
+        }
+        
+        // Ghoul priorities: dropped candle > nearby shards > chase soul
+        // BUT if at same position as soul (e.g., after respawn), move toward center
+        const atSamePosition = aiPos.row === gameState.soulPosition.row && 
+                               aiPos.col === gameState.soulPosition.col;
+        
+        if (gameState.candlePosition) {
+            // Dropped candle exists - go for it!
+            targetPos = gameState.candlePosition;
+        } else if (nearestShard && nearestShardDist <= 2) {
+            targetPos = nearestShard;
+        } else if (atSamePosition) {
+            // At same position as soul (e.g., after respawn) - move toward center to spread out
+            const center = Math.floor(gameState.boardSize / 2);
+            targetPos = { row: center, col: center };
+        } else {
+            targetPos = gameState.soulPosition;
+        }
+    }
+    
+    return calculateBestDirection(aiPos, targetPos);
+}
+
+function canMoveInDirection(pos, direction) {
+    const newRow = pos.row + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0);
+    const newCol = pos.col + (direction === 'left' ? -1 : direction === 'right' ? 1 : 0);
+    
+    // Check bounds
+    if (newRow < 0 || newRow >= gameState.boardSize || newCol < 0 || newCol >= gameState.boardSize) {
+        return false;
+    }
+    
+    return true;
+}
+
+function calculateBestDirection(from, to) {
+    const rowDiff = to.row - from.row;
+    const colDiff = to.col - from.col;
+    
+    const directions = [];
+    
+    if (rowDiff < 0) directions.push({ dir: 'up', dist: Math.abs(rowDiff) });
+    if (rowDiff > 0) directions.push({ dir: 'down', dist: Math.abs(rowDiff) });
+    if (colDiff < 0) directions.push({ dir: 'left', dist: Math.abs(colDiff) });
+    if (colDiff > 0) directions.push({ dir: 'right', dist: Math.abs(colDiff) });
+    
+    // If AI is stuck (hit wall repeatedly), pick any valid direction
+    if (gameState.aiStuckCount >= 2) {
+        const allDirs = ['up', 'down', 'left', 'right'];
+        const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
+        if (validDirs.length === 0) return null;
+        gameState.aiStuckCount = 0; // Reset after finding alternative
+        return validDirs[Math.floor(Math.random() * validDirs.length)];
+    }
+    
+    // If already at target or no directions, pick any valid direction
+    if (directions.length === 0) {
+        const allDirs = ['up', 'down', 'left', 'right'];
+        const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
+        if (validDirs.length === 0) return null;
+        return validDirs[Math.floor(Math.random() * validDirs.length)];
+    }
+    
+    // Filter out directions that would hit walls
+    const validDirections = directions.filter(d => canMoveInDirection(from, d.dir));
+    if (validDirections.length === 0) {
+        // All preferred directions blocked - pick any valid one
+        const allDirs = ['up', 'down', 'left', 'right'];
+        const validDirs = allDirs.filter(dir => canMoveInDirection(from, dir));
+        if (validDirs.length === 0) return null;
+        return validDirs[Math.floor(Math.random() * validDirs.length)];
+    }
+    
+    // Apply difficulty
+    if (gameState.aiDifficulty === 'easy') {
+        // 70% random
+        if (Math.random() < 0.7) {
+            return validDirections[Math.floor(Math.random() * validDirections.length)].dir;
+        }
+    } else if (gameState.aiDifficulty === 'medium') {
+        // 50% optimal
+        if (Math.random() < 0.5) {
+            return validDirections[Math.floor(Math.random() * validDirections.length)].dir;
+        }
+    }
+    
+    // Hard or fallback: always optimal
+    validDirections.sort((a, b) => b.dist - a.dist);
+    return validDirections[0].dir;
 }
 
 // Initialize on load
