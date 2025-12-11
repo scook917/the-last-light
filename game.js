@@ -1,6 +1,15 @@
+// LLM Configuration for Hard AI (Ollama)
+const LLM_CONFIG = {
+    model: 'llama3',
+    endpoint: 'http://localhost:11434/api/generate',
+    enabled: true,
+    temperature: 0.7,
+    maxTokens: 20
+};
+
 // Game State
 let gameState = {
-    boardSize: 8,
+    boardSize: 5,
     numBattles: 3,
     maxBattles: 3,
     currentPlayer: 'soul',
@@ -35,7 +44,8 @@ let gameState = {
     lastAIPosition: null,
     aiStuckCount: 0,
     battleReady: false,
-    inBattle: false
+    inBattle: false,
+    llmMoveCache: null
 };
 
 // Initialize game
@@ -44,6 +54,314 @@ function showScreen(screenId) {
         screen.classList.remove('active');
     });
     document.getElementById(screenId).classList.add('active');
+}
+
+// LLM AI Functions
+function buildLLMPrompt(aiRole) {
+    const aiPos = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
+    const opponentPos = aiRole === 'soul' ? gameState.ghoulPosition : gameState.soulPosition;
+    
+    // Calculate distances to important objects
+    let nearestShardDist = Infinity;
+    let nearestShardPos = null;
+    for (const shard of gameState.shardsOnBoard) {
+        const dist = Math.abs(aiPos.row - shard.row) + Math.abs(aiPos.col - shard.col);
+        if (dist < nearestShardDist) {
+            nearestShardDist = dist;
+            nearestShardPos = shard;
+        }
+    }
+    
+    const distToOpponent = Math.abs(aiPos.row - opponentPos.row) + Math.abs(aiPos.col - opponentPos.col);
+    const distToCandle = gameState.candlePosition ? 
+        Math.abs(aiPos.row - gameState.candlePosition.row) + Math.abs(aiPos.col - gameState.candlePosition.col) : 
+        Infinity;
+    
+    // Build board visualization with coordinates
+    let boardStr = '\nCurrent Board State (coordinates: row,col):\n';
+    boardStr += '   ';
+    for (let col = 0; col < gameState.boardSize; col++) {
+        boardStr += col.toString().padStart(2) + ' ';
+    }
+    boardStr += '\n';
+    
+    for (let row = 0; row < gameState.boardSize; row++) {
+        boardStr += row.toString().padStart(2) + ' ';
+        for (let col = 0; col < gameState.boardSize; col++) {
+            if (row === aiPos.row && col === aiPos.col) {
+                boardStr += (aiRole === 'soul' ? '👻' : '👹') + ' ';
+            } else if (row === opponentPos.row && col === opponentPos.col) {
+                boardStr += (aiRole === 'soul' ? '👹' : '👻') + ' ';
+            } else if (gameState.candlePosition && row === gameState.candlePosition.row && col === gameState.candlePosition.col) {
+                boardStr += '🕯️ ';
+            } else {
+                let hasShard = false;
+                for (const shard of gameState.shardsOnBoard) {
+                    if (shard.row === row && shard.col === col) {
+                        boardStr += '💎 ';
+                        hasShard = true;
+                        break;
+                    }
+                }
+                if (!hasShard) boardStr += '⬜ ';
+            }
+        }
+        boardStr += '\n';
+    }
+    
+    // Build comprehensive game context
+    let prompt = `=== THE LAST LIGHT - Strategic Board Game ===
+
+GAME RULES:
+- Board Size: ${gameState.boardSize}x${gameState.boardSize}
+- You are: ${aiRole.toUpperCase()} ${aiRole === 'soul' ? '👻' : '👹'}
+- Opponent: ${aiRole === 'soul' ? 'GHOUL 👹' : 'SOUL 👻'}
+
+${aiRole === 'soul' ? `
+YOUR WIN CONDITION (SOUL):
+1. Pick up the candle 🕯️ (move onto it)
+2. Collect ${gameState.maxSoulShards} soul shards 💎 for protection
+3. Survive until battles run out (${gameState.numBattles} battles remain)
+
+YOUR STRATEGY:
+- ${!gameState.soulHasCandle ? 'PRIORITY: Get the candle first! Move to (' + (gameState.candlePosition ? gameState.candlePosition.row + ',' + gameState.candlePosition.col : 'center') + ')' : 'You have the candle ✓'}
+- ${gameState.soulShards < gameState.maxSoulShards ? 'Collect shards for protection (need ' + (gameState.maxSoulShards - gameState.soulShards) + ' more)' : 'Shards maxed out ✓'}
+- AVOID the Ghoul! Distance: ${distToOpponent} spaces
+- ${gameState.ghoulShards >= 3 ? '⚠️ DANGER! Ghoul has 3+ shards and can SNUFF your candle! STAY AWAY!' : 'Ghoul needs more shards to attack'}
+
+CURRENT STATUS:
+- You have candle: ${gameState.soulHasCandle ? 'YES ✓' : 'NO ✗'}
+- Your shards: ${gameState.soulShards}/${gameState.maxSoulShards}
+- Ghoul shards: ${gameState.ghoulShards}/3 ${gameState.ghoulShards >= 3 ? '⚠️ CAN ATTACK!' : ''}
+` : `
+YOUR WIN CONDITION (GHOUL):
+1. Collect 3 soul shards 💎 to unlock snuff ability
+2. Get adjacent to the Soul (when they have candle)
+3. Win the battle to snuff out their candle
+
+YOUR STRATEGY:
+- ${gameState.ghoulShards < 3 ? 'PRIORITY: Collect 3 shards first! (have ' + gameState.ghoulShards + '/3)' : 'Shards complete ✓ - Now hunt the Soul!'}
+- ${gameState.soulHasCandle ? 'Soul has the candle - they are vulnerable!' : 'Soul doesn\'t have candle yet - wait for them to get it'}
+- ${gameState.ghoulShards >= 3 && gameState.soulHasCandle ? '🎯 ATTACK! Get cardinally adjacent (up/down/left/right) to Soul to start battle!' : gameState.ghoulShards >= 3 ? 'Ready to attack once Soul has candle' : 'Cannot attack until you have 3 shards'}
+- Distance to Soul: ${distToOpponent} spaces ${distToOpponent === 1 ? '(1 move away! Get adjacent to trigger battle!)' : ''}
+
+CURRENT STATUS:
+- Your shards: ${gameState.ghoulShards}/3 ${gameState.ghoulShards >= 3 ? '✓ CAN SNUFF' : '✗ Need more'}
+- Soul has candle: ${gameState.soulHasCandle ? 'YES' : 'NO'}
+- Soul shards: ${gameState.soulShards}/${gameState.maxSoulShards}
+`}
+
+${boardStr}
+
+TACTICAL INFORMATION:
+- Your position: (${aiPos.row}, ${aiPos.col})
+- Opponent position: (${opponentPos.row}, ${opponentPos.col}) - Distance: ${distToOpponent}
+${gameState.candlePosition ? `- Candle position: (${gameState.candlePosition.row}, ${gameState.candlePosition.col}) - Distance: ${distToCandle}` : ''}
+${nearestShardPos ? `- Nearest shard: (${nearestShardPos.row}, ${nearestShardPos.col}) - Distance: ${nearestShardDist}` : '- No shards on board'}
+- Shards on board: ${gameState.shardsOnBoard.length}
+- Moves remaining this turn: ${gameState.movesLeft}
+
+VALID MOVES FOR YOUR CURRENT POSITION:
+${(() => {
+    const validMoves = [];
+    const maxRow = gameState.boardSize - 1;
+    const maxCol = gameState.boardSize - 1;
+    
+    // Check each direction - CARDINAL FIRST
+    if (aiPos.row > 0) validMoves.push('- up (go to row ' + (aiPos.row - 1) + ')');
+    if (aiPos.row < maxRow) validMoves.push('- down (go to row ' + (aiPos.row + 1) + ')');
+    if (aiPos.col > 0) validMoves.push('- left (go to col ' + (aiPos.col - 1) + ')');
+    if (aiPos.col < maxCol) validMoves.push('- right (go to col ' + (aiPos.col + 1) + ')');
+    
+    // DIAGONAL MOVES (must use hyphen!)
+    if (aiPos.row > 0 && aiPos.col > 0) validMoves.push('- up-left (diagonal to ' + (aiPos.row - 1) + ',' + (aiPos.col - 1) + ')');
+    if (aiPos.row > 0 && aiPos.col < maxCol) validMoves.push('- up-right (diagonal to ' + (aiPos.row - 1) + ',' + (aiPos.col + 1) + ')');
+    if (aiPos.row < maxRow && aiPos.col > 0) validMoves.push('- down-left (diagonal to ' + (aiPos.row + 1) + ',' + (aiPos.col - 1) + ')');
+    if (aiPos.row < maxRow && aiPos.col < maxCol) validMoves.push('- down-right (diagonal to ' + (aiPos.row + 1) + ',' + (aiPos.col + 1) + ')');
+    
+    return validMoves.join('\n');
+})()}
+
+⚠️ IMPORTANT: You can ONLY move in the directions listed above.
+
+═══════════════════════════════════════════════════════════
+🎲 YOU MUST MAKE ${gameState.movesLeft} MOVE(S) THIS TURN
+═══════════════════════════════════════════════════════════
+
+⚠️⚠️⚠️ CRITICAL RULES ⚠️⚠️⚠️
+1. You MUST provide EXACTLY ${gameState.movesLeft} direction(s) - NOT MORE, NOT LESS
+2. Count your directions: ${Array.from({length: gameState.movesLeft}, (_, i) => i + 1).join(', ')} = ${gameState.movesLeft} total
+3. Use ONLY these exact words from valid moves above
+4. Diagonal moves MUST use HYPHEN: up-left, up-right, down-left, down-right
+5. Cardinal moves: up, down, left, right (NO hyphens)
+6. Separate each direction with a SPACE
+7. NO explanations, NO reasoning, NO extra words - ONLY ${gameState.movesLeft} direction(s)
+
+✓ CORRECT FORMAT:
+${gameState.movesLeft === 1 ? 
+`   down-right` : 
+gameState.movesLeft === 2 ? 
+`   down-right down` :
+gameState.movesLeft === 3 ?
+`   down-right down left` :
+`   down-right down down left`}
+
+✗ WRONG FORMAT:
+${gameState.movesLeft === 1 ? 
+`   down right (missing hyphen!)` : 
+gameState.movesLeft === 2 ? 
+`   down right, down (missing hyphen!)` :
+gameState.movesLeft === 3 ?
+`   down right down left (missing hyphen!)` :
+`   I will move down-right (extra words!)`}
+
+/Users/sarah/Documents/the-last-light/game.js`;
+    
+    return prompt;
+}
+
+async function getLLMMove(aiRole) {
+    if (!LLM_CONFIG.enabled) {
+        console.warn('LLM not enabled');
+        return null;
+    }
+    
+    try {
+        const prompt = buildLLMPrompt(aiRole);
+        
+        console.log('\n🤖 ===== LLM AI THINKING =====');
+        console.log('📤 PROMPT SENT TO LLAMA:');
+        console.log(prompt);
+        console.log('⏳ Waiting for Llama response...\n');
+        
+        const response = await fetch(LLM_CONFIG.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: LLM_CONFIG.model,
+                prompt: prompt,
+                stream: false,
+                options: {
+                    temperature: LLM_CONFIG.temperature,
+                    num_predict: LLM_CONFIG.maxTokens
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Ollama error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const text = data.response || '';
+        
+        console.log('📥 RAW LLAMA RESPONSE:');
+        console.log(`"${text}"`);
+        console.log('\n🧠 AI OUTPUT:', text);
+        
+        // Extract moves from response - ONLY accept exact valid moves
+        const movesText = text.trim().toLowerCase();
+        const validDirections = ['up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right'];
+        
+        // Split by spaces and extract only valid moves
+        const words = movesText.split(/\s+/);
+        const moves = [];
+        
+        console.log('🔍 PARSING WORDS:', words);
+        
+        for (const word of words) {
+            const cleaned = word.replace(/[^a-z-]/g, '');
+            if (validDirections.includes(cleaned)) {
+                moves.push(cleaned);
+            }
+        }
+        
+        console.log('🎯 EXTRACTED MOVES:', moves);
+        
+        if (moves.length > 0) {
+            if (moves.length < gameState.movesLeft) {
+                console.warn(`⚠️ AI provided ${moves.length} moves but needs ${gameState.movesLeft} moves!`);
+                console.warn(`   Missing ${gameState.movesLeft - moves.length} move(s)`);
+                console.log('🔄 Falling back to pathfinding AI');
+                console.log('===== END LLM THINKING =====\n');
+                return null;
+            }
+            
+            // Use only the number of moves needed (in case AI provided too many)
+            const finalMoves = moves.slice(0, gameState.movesLeft);
+            console.log(`✅ VALID MOVES (${finalMoves.length}/${gameState.movesLeft}):`, finalMoves.map(m => m.toUpperCase()).join(' → '));
+            console.log('===== END LLM THINKING =====\n');
+            return finalMoves;
+        } else {
+            console.warn(`❌ NO VALID MOVES - could not extract directions from: "${text}"`);
+            console.warn(`   AI must use hyphens for diagonals: up-left, up-right, down-left, down-right`);
+            console.log('🔄 Falling back to pathfinding AI');
+            console.log('===== END LLM THINKING =====\n');
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ LLM ERROR:', error);
+        console.log('===== END LLM THINKING =====\n');
+        showToast('⚠️ Ollama not running');
+        return null;
+    }
+}
+
+function loadLLMConfig() {
+    const saved = localStorage.getItem('llmConfig');
+    if (saved) {
+        const config = JSON.parse(saved);
+        LLM_CONFIG.enabled = config.enabled !== undefined ? config.enabled : true;
+        document.getElementById('llm-enabled').checked = LLM_CONFIG.enabled;
+    }
+}
+
+function saveLLMConfig() {
+    LLM_CONFIG.enabled = document.getElementById('llm-enabled').checked;
+    localStorage.setItem('llmConfig', JSON.stringify({
+        enabled: LLM_CONFIG.enabled
+    }));
+    showToast('✓ LLM settings saved');
+}
+
+async function testLLMConnection() {
+    const btn = document.getElementById('test-llm-btn');
+    const status = document.getElementById('llm-status');
+    
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    status.textContent = '';
+    
+    try {
+        const response = await fetch(LLM_CONFIG.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: LLM_CONFIG.model,
+                prompt: 'Test',
+                stream: false,
+                options: { num_predict: 5 }
+            })
+        });
+        
+        if (response.ok) {
+            status.textContent = '✓ Ollama connected!';
+            status.style.color = '#4CAF50';
+        } else {
+            status.textContent = `✗ Error: ${response.status}`;
+            status.style.color = '#f44336';
+        }
+    } catch (error) {
+        status.textContent = '✗ Ollama not running';
+        status.style.color = '#f44336';
+    }
+    
+    btn.disabled = false;
+    btn.textContent = 'Test Connection';
 }
 
 // Setup screen - size selection
@@ -83,7 +401,7 @@ function startGame() {
     
     switch(selectedSize) {
         case 'small':
-            gameState.boardSize = 8;
+            gameState.boardSize = 5;
             gameState.maxBattles = 3;
             gameState.totalShards = 5;
             gameState.maxSoulShards = 3;
@@ -446,9 +764,10 @@ function collectShard(player, row, col) {
         showToast('💎 Ghoul collected a shard!');
     }
     
-    // Check if need to respawn shard on small map
-    if (gameState.boardSize === 8 && gameState.shardsOnBoard.length < 2) {
+    // Check if need to respawn shard when below 2 shards
+    if (gameState.shardsOnBoard.length < 2) {
         respawnShard();
+        console.log('💎 Auto-respawned shard (only ' + (gameState.shardsOnBoard.length - 1) + ' remaining)');
     }
     
     updatePowerUps();
@@ -1577,7 +1896,7 @@ function isAITurn() {
     return gameState.currentPlayer === aiRole;
 }
 
-function makeAIMove() {
+async function makeAIMove() {
     // Don't continue if AI stopped thinking (turn ended)
     if (!gameState.aiIsThinking) {
         return;
@@ -1588,6 +1907,7 @@ function makeAIMove() {
         gameState.aiIsThinking = false;
         gameState.lastAIPosition = null;
         gameState.aiStuckCount = 0;
+        gameState.llmMoveCache = null;
         setTimeout(() => endTurn(), 500);
         return;
     }
@@ -1604,8 +1924,29 @@ function makeAIMove() {
         gameState.aiStuckCount = 0;
     }
     
-    // Get direction to move
-    const direction = getAIDirection();
+    // Get direction to move (may be async for LLM)
+    let direction = getAIDirection();
+    
+    // If hard difficulty and LLM enabled, get LLM moves
+    if (direction === 'llm-pending') {
+        // Check if we have cached moves from LLM
+        if (!gameState.llmMoveCache || gameState.llmMoveCache.length === 0) {
+            // Ask LLM for all moves at once
+            const moves = await getLLMMove(aiRole);
+            
+            // If LLM failed, fall back to pathfinding
+            if (!moves || moves.length === 0) {
+                direction = getAIDirection(true); // Force non-LLM
+            } else {
+                // Store moves in cache and use first one
+                gameState.llmMoveCache = moves;
+                direction = gameState.llmMoveCache.shift();
+            }
+        } else {
+            // Use next move from cache
+            direction = gameState.llmMoveCache.shift();
+        }
+    }
     
     // Check if AI (ghoul) is about to move onto dropped candle - prioritize this over battle!
     let movingToDroppedCandle = false;
@@ -1962,9 +2303,14 @@ function runMCTS(aiPos, targetPos, aiRole, targetIsShard = false, iterations = 1
     return bestChild.move;
 }
 
-function getAIDirection() {
+function getAIDirection(forceFallback = false) {
     const aiRole = gameState.playerRole === 'soul' ? 'ghoul' : 'soul';
     const aiPos = aiRole === 'soul' ? gameState.soulPosition : gameState.ghoulPosition;
+    
+    // Hard difficulty with LLM enabled - signal async needed
+    if (!forceFallback && gameState.aiDifficulty === 'hard' && LLM_CONFIG.enabled) {
+        return 'llm-pending';
+    }
     
     // AI can always change direction - choose best direction to target
     let targetPos;
