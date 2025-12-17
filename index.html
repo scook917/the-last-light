@@ -230,10 +230,30 @@
             <h2>⚙️ Settings</h2>
             
             <div class="settings-section">
+                <h3>🤖 Ollama AI Configuration (Hard Difficulty)</h3>
+                <p style="margin-bottom: 15px; color: #888;">Using local Llama via Ollama. Make sure Ollama is running: <code style="background: #333; padding: 2px 8px; border-radius: 4px;">ollama serve</code></p>
+                
+                <div style="margin-bottom: 15px; padding: 10px; background: #222; border-radius: 8px; border: 2px solid #444;">
+                    <p style="margin: 0; color: #aaa;"><strong>Model:</strong> llama3</p>
+                    <p style="margin: 5px 0 0 0; color: #aaa;"><strong>Endpoint:</strong> http://localhost:11434</p>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="llm-enabled" checked style="margin-right: 10px; width: 20px; height: 20px;">
+                        <span>Enable Ollama AI for Hard Difficulty</span>
+                    </label>
+                </div>
+                
+                <button class="action-btn" onclick="saveLLMConfig()" style="margin-right: 10px;">💾 Save Settings</button>
+                <button id="test-llm-btn" class="action-btn" onclick="testLLMConnection()">🔍 Test Connection</button>
+                <p id="llm-status" style="margin-top: 10px; font-weight: bold;"></p>
+            </div>
+            
+            <div class="settings-section">
                 <h3>🎮 Game Settings</h3>
                 <p class="coming-soon">Coming Soon!</p>
                 <ul class="settings-list">
-                    <li>🤖 AI Difficulty Levels</li>
                     <li>🔊 Sound Effects</li>
                     <li>🎵 Background Music</li>
                     <li>🎨 Theme Customization</li>
@@ -345,7 +365,7 @@
                         <strong>Powers:</strong><br>
                         <em>None</em>
                     </div>
-                    <button class="power-btn" onclick="showPowerUpModal('soul')">💎 Buy Power-Up</button>
+                    <button class="power-btn" onclick="showObjectiveModal('soul')">� View Objective</button>
                 </div>
 
                 <!-- Center - Board and Controls -->
@@ -414,7 +434,7 @@
                         <strong>Powers:</strong><br>
                         <em>None</em>
                     </div>
-                    <button class="power-btn" onclick="showPowerUpModal('ghoul')">💎 Buy Power-Up</button>
+                    <button class="power-btn" onclick="showObjectiveModal('ghoul')">� View Objective</button>
                 </div>
             </div>
 
@@ -461,6 +481,15 @@
             <h2>💎 Buy Power-Up</h2>
             <div id="powerup-list" class="powerup-list"></div>
             <button class="action-btn secondary-btn" onclick="closePowerUpModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Objective Modal -->
+    <div id="objective-modal" class="modal">
+        <div class="modal-content powerup-content">
+            <h2 id="objective-title">📋 Your Objective</h2>
+            <div id="objective-content" class="powerup-list"></div>
+            <button class="action-btn secondary-btn" onclick="closeObjectiveModal()">Close</button>
         </div>
     </div>
 
