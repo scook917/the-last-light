@@ -401,7 +401,7 @@ function startGame() {
     
     switch(selectedSize) {
         case 'small':
-            gameState.boardSize = 5;
+            gameState.boardSize = 8;
             gameState.maxBattles = 3;
             gameState.totalShards = 5;
             gameState.maxSoulShards = 3;
@@ -2549,10 +2549,10 @@ function calculateBestDirection(from, to) {
     
     // Apply difficulty
     if (gameState.aiDifficulty === 'easy') {
-        // 70% random
-        if (Math.random() < 0.7) {
-            return validDirections[Math.floor(Math.random() * validDirections.length)].dir;
-        }
+        // Heuristic: always move toward target (no randomness)
+        // Simple rule-based AI that follows basic strategy
+        validDirections.sort((a, b) => a.dist - b.dist);
+        return validDirections[0].dir;
     } else if (gameState.aiDifficulty === 'medium') {
         // 50% optimal
         if (Math.random() < 0.5) {
@@ -2561,7 +2561,7 @@ function calculateBestDirection(from, to) {
     }
     
     // Hard or fallback: always optimal
-    validDirections.sort((a, b) => b.dist - a.dist);
+    validDirections.sort((a, b) => a.dist - b.dist);
     return validDirections[0].dir;
 }
 
